@@ -231,6 +231,7 @@ const PAGE_FILES = [
   'js/board.js',
   'js/evidence.js',
   'js/words.js',
+  'js/sound.js',
   'js/app.js'
 ];
 
@@ -245,7 +246,7 @@ check('app: every shipped file exists', () => {
 check('app: the page loads the theme first, then the rules, the packs and its own modules', () => {
   const page = read(path.join(v1, 'index.html'));
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
-  const expected = ['js/theme.js', 'js/engine.js', 'js/packs/depot.js', 'js/packs/night-shift.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/app.js'];
+  const expected = ['js/theme.js', 'js/engine.js', 'js/packs/depot.js', 'js/packs/night-shift.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/app.js'];
   assert(JSON.stringify(scripts) === JSON.stringify(expected), `script order is ${scripts.join(', ')}`);
   // WHY: the ramp has to be on the root before the sheet paints, or the first frame flashes the other theme.
   assert(page.indexOf('src="js/theme.js"') < page.indexOf('href="css/app.css"'), 'the theme script runs after the stylesheet');
@@ -316,17 +317,184 @@ check('app: the repository root redirects to v1', () => {
   return 'root -> v1/';
 });
 
-check('app: only the two documented storage keys are used', () => {
+check('app: only the three documented storage keys are used', () => {
   const found = new Set();
   v1Text.forEach((file) => {
     // WHY: quoted only - `Loopworks.register` and `Loopworks.machine` are API names, not keys.
     for (const match of read(file).matchAll(/['"](loopworks\.[a-z0-9.]+)['"]/gi)) found.add(match[1]);
   });
   const keys = [...found].sort();
-  assert(keys.length === 2, `expected two keys, found ${keys.join(', ')}`);
+  assert(keys.length === 3, `expected three keys, found ${keys.join(', ')}`);
   assert(keys[0] === 'loopworks.app.progress.v1', `unexpected key ${keys[0]}`);
-  assert(keys[1] === 'loopworks.app.theme.v1', `unexpected key ${keys[1]}`);
+  assert(keys[1] === 'loopworks.app.sound.v1', `unexpected key ${keys[1]}`);
+  assert(keys[2] === 'loopworks.app.theme.v1', `unexpected key ${keys[2]}`);
   return keys.join(', ');
+});
+
+// WHY: the sound module is a plain script like the engine, so a fake AudioContext proves the cue
+//      table and the mute without a speaker. It records each scheduled source instead of making a
+//      noise, which keeps the check runnable on a silent machine and in CI.
+function fakeSoundHost(storeSeed) {
+  const starts = [];
+  const writes = [];
+  function param() {
+    return {
+      value: 0,
+      setValueAtTime() {},
+      linearRampToValueAtTime() {},
+      exponentialRampToValueAtTime() {}
+    };
+  }
+  function node(extra) {
+    return Object.assign({ connect() { return this; } }, extra);
+  }
+  class FakeAudioContext {
+    constructor() {
+      this.state = 'running';
+      this.sampleRate = 8000;
+      this.currentTime = 1;
+      this.destination = {};
+    }
+    createDynamicsCompressor() {
+      return node({ threshold: param(), knee: param(), ratio: param(), attack: param(), release: param() });
+    }
+    createGain() { return node({ gain: param() }); }
+    createBuffer(channels, length) {
+      return { getChannelData() { return new Float32Array(length); } };
+    }
+    createOscillator() {
+      return node({
+        type: '',
+        frequency: param(),
+        start() { starts.push('tone'); },
+        stop() {}
+      });
+    }
+    createBufferSource() {
+      return node({
+        buffer: null,
+        start() { starts.push('noise'); },
+        stop() {}
+      });
+    }
+    createBiquadFilter() { return node({ type: '', frequency: param(), Q: param() }); }
+    resume() { this.state = 'running'; return Promise.resolve(); }
+    suspend() { this.state = 'suspended'; return Promise.resolve(); }
+  }
+  const attrs = new Map();
+  const button = new Map();
+  const store = new Map(storeSeed || []);
+  const host = {
+    console,
+    document: {
+      hidden: false,
+      documentElement: { setAttribute(name, value) { attrs.set(name, value); } },
+      addEventListener() {},
+      querySelector(selector) {
+        return selector === '[data-action="toggle-sound"]'
+          ? { setAttribute(name, value) { button.set(name, value); } }
+          : null;
+      }
+    },
+    AudioContext: FakeAudioContext,
+    localStorage: {
+      getItem(key) { return store.has(key) ? store.get(key) : null; },
+      setItem(key, value) { writes.push([key, value]); store.set(key, value); }
+    }
+  };
+  host.globalThis = host;
+  host.window = host;
+  return { host, starts, writes, attrs, button, store };
+}
+
+check('app: the sound module plays all eight palette A cues and mute stops them', () => {
+  const fake = fakeSoundHost();
+  vm.createContext(fake.host);
+  runScript(fake.host, path.join(v1, 'js', 'sound.js'));
+  const sound = fake.host.LoopworksSound;
+  assert(sound, 'sound.js did not define the LoopworksSound global');
+  assert(fake.attrs.get('data-sound') === 'on', 'sound must default on');
+  assert(fake.button.get('aria-label') === 'Mute sound', 'the button must start saying Mute sound');
+  const cues = ['move', 'grab', 'bump', 'code', 'fuel', 'steps', 'ended', 'solved'];
+  cues.forEach((name) => {
+    const before = fake.starts.length;
+    sound.play(name);
+    assert(fake.starts.length > before, `the ${name} cue scheduled no source`);
+  });
+  const total = fake.starts.length;
+  sound.toggle();
+  assert(fake.attrs.get('data-sound') === 'off', 'muting does not turn the speaker off');
+  assert(fake.button.get('aria-label') === 'Turn sound on', 'muting does not name the next action');
+  sound.play('move');
+  assert(fake.starts.length === total, 'a muted cue still made a sound');
+  sound.toggle();
+  assert(fake.attrs.get('data-sound') === 'on', 'unmuting does not turn the speaker back on');
+  sound.play('solved');
+  assert(fake.starts.length > total, 'sound does not come back after unmuting');
+  assert(fake.writes.some(([key, value]) => key === 'loopworks.app.sound.v1' && value === 'off'), 'the off choice is not stored');
+  return `${cues.length} cues, mute stops and resumes`;
+});
+
+check('app: a remembered mute starts silent', () => {
+  const fake = fakeSoundHost([['loopworks.app.sound.v1', 'off']]);
+  vm.createContext(fake.host);
+  runScript(fake.host, path.join(v1, 'js', 'sound.js'));
+  assert(fake.attrs.get('data-sound') === 'off', 'the stored mute is not painted at load');
+  assert(fake.button.get('aria-label') === 'Turn sound on', 'the stored mute does not name the next action');
+  fake.host.LoopworksSound.play('move');
+  assert(fake.starts.length === 0, 'a stored mute still made a sound');
+  return 'off survives a reload';
+});
+
+check('app: the cue table is palette A and the graph is the audition quiet level', () => {
+  const sound = read(path.join(v1, 'js', 'sound.js'));
+  [
+    ['f0: 392', 'the solved chime root'],
+    ['f0: 523', 'the solved fifth'],
+    ['f0: 1046', 'the solved octave'],
+    ['f0: 260, f1: 210', 'the move tick'],
+    ['f0: 100, f1: 52', 'the bump body'],
+    ['master.gain.value = 0.7', 'the master gain'],
+    ['comp.threshold.value = -15', 'the compressor threshold']
+  ].forEach(([needle, what]) => assert(sound.includes(needle), `${what} is missing (${needle})`));
+  assert(!/\bele[ck]\b|\bchime\b/.test(sound), 'the module still carries a palette he did not choose');
+  return 'wood table, 0.7 into -15 dB';
+});
+
+check('app: the speaker sits beside the theme and carries the two states', () => {
+  const page = read(path.join(v1, 'index.html'));
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const head = page.slice(page.indexOf('<header'), page.indexOf('</header>'));
+  assert(/data-sound="on"/.test(page), 'the root carries no default sound state');
+  assert(/data-action="toggle-sound"/.test(head), 'the top bar has no speaker button');
+  assert(head.indexOf('data-action="toggle-sound"') > head.indexOf('data-action="toggle-theme"'), 'the speaker does not sit beside the theme');
+  assert(head.indexOf('data-action="toggle-sound"') > head.indexOf('</nav>'), 'the speaker sits inside a view-specific group');
+  assert(/icon-sound-on/.test(head) && /icon-sound-off/.test(head), 'the speaker has no on and off icon');
+  assert(/\[data-sound="on"\] \.icon-sound-on\s*{\s*display:\s*block/.test(css), 'the on icon never paints');
+  assert(/\[data-sound="off"\] \.icon-sound-off\s*{\s*display:\s*block/.test(css), 'the crossed icon never paints');
+  return 'beside the theme, one icon per state, both views';
+});
+
+check('app: the controller ties each cue to the line and the ending', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/const LoopworksSound = host\.LoopworksSound/.test(app), 'the controller never reaches the sound module');
+  assert(/function tickCue\(event\)[\s\S]*?action === 'grab'[\s\S]*?'grab' : 'move'/.test(app), 'a hand or a line does not choose its cue');
+  assert(/function endingCue\(status\)[\s\S]*?'solved'[\s\S]*?'bump'[\s\S]*?'fuel'[\s\S]*?'steps'[\s\S]*?'ended'/.test(app), 'an ending has no cue');
+  assert(/cue\(tickCue\(event\)\)/.test(app), 'a tick never plays a cue');
+  assert(/cue\(endingCue\(status\)\)/.test(app), 'an ending never plays a cue');
+  assert((app.match(/cue\('code'\)/g) || []).length === 2, 'a parse error does not cue on both Run and Step');
+  return 'tick, hand, ending, parse error';
+});
+
+check('app: sound adds no audio file, element or slider', () => {
+  v1Text.forEach((file) => {
+    const text = read(file);
+    assert(!/<audio\b/i.test(text), `${path.relative(v1, file)} carries an audio element`);
+    assert(!/\bnew\s+Audio\s*\(/.test(text), `${path.relative(v1, file)} builds an audio element`);
+    assert(!/\.(mp3|wav|ogg|m4a|aac|flac)\b/i.test(text), `${path.relative(v1, file)} names an audio file`);
+    assert(!/type="range"/i.test(text), `${path.relative(v1, file)} carries a slider`);
+  });
+  return 'synthesised only, one fixed level';
 });
 
 check('app: the screen never uses rating words', () => {

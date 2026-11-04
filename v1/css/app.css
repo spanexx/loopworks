@@ -283,6 +283,14 @@ body.is-evidence .goal-top { display: none; }
 [data-theme="dark"] .icon-sun { display: block; }
 [data-theme="light"] .icon-moon { display: block; }
 
+/* WHY: sound is on by default, so the unmarked state is the speaker with waves. The crossed
+   speaker is the stored "off" state, and the root attribute is set before the bar paints. */
+.icon-btn .icon-sound-on,
+.icon-btn .icon-sound-off { display: none; }
+
+[data-sound="on"] .icon-sound-on { display: block; }
+[data-sound="off"] .icon-sound-off { display: block; }
+
 .shell {
   flex: 1;
   min-height: 0;

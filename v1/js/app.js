@@ -12,6 +12,7 @@
   const LoopworksBoard = host.LoopworksBoard;
   const LoopworksEvidence = host.LoopworksEvidence;
   const LoopworksWords = host.LoopworksWords;
+  const LoopworksSound = host.LoopworksSound;
 
   function id(name) { return doc.getElementById(name); }
   const el = {
@@ -277,6 +278,25 @@
 
   // ---------------------------------------------------------------- the run
 
+  // WHY: the ear follows the eye. A tick that is not a hand or an ending is the move tick, and an
+  //      ending replaces the tick it lands on rather than layering over it, so the two never
+  //      argue about what just happened.
+  function tickCue(event) {
+    return event.action === 'grab' || event.action === 'drop' ? 'grab' : 'move';
+  }
+
+  function endingCue(status) {
+    if (status.status === 'solved') return 'solved';
+    if (status.reason === 'bump') return 'bump';
+    if (status.reason === 'out of fuel') return 'fuel';
+    if (status.reason === 'too many steps') return 'steps';
+    return 'ended';
+  }
+
+  function cue(name) {
+    if (LoopworksSound) LoopworksSound.play(name);
+  }
+
   function setRunButton() {
     el.runIcon.innerHTML = running ? PAUSE : PLAY;
     el.runLabel.textContent = running ? 'Pause' : 'Run';
@@ -301,6 +321,7 @@
     const event = machine.events[machine.events.length - 1];
     if (event) updateLog(event);
     if (status.done) finish(status);
+    else if (event) cue(tickCue(event));
   }
 
   function finish(status) {
@@ -323,6 +344,7 @@
       setVerdict('stuck', 'Stuck', detail, WARN);
     }
     if (logOpen) renderTrace();
+    cue(endingCue(status));
   }
 
   function startRun() {
@@ -334,6 +356,7 @@
       updateFuel(baseline);
       if (machine.error) {
         setVerdict('stuck', 'Stuck', `parse error - ${machine.error}`, WARN);
+        cue('code');
         return;
       }
     }
@@ -352,6 +375,7 @@
       updateFuel(baseline);
       if (machine.error) {
         setVerdict('stuck', 'Stuck', `parse error - ${machine.error}`, WARN);
+        cue('code');
         return;
       }
     }
@@ -842,7 +866,17 @@
   });
 
   if (host.ResizeObserver) {
-    new host.ResizeObserver(() => fitBoard()).observe(el.field);
+    // WHY: sizing the board inside the observer's own delivery writes layout while layout is
+    //      being delivered, which Chrome reports as a ResizeObserver loop on rapid resizes. One
+    //      frame later is imperceptible and keeps the console clean.
+    let fitFrame = 0;
+    new host.ResizeObserver(() => {
+      if (fitFrame) return;
+      fitFrame = host.requestAnimationFrame(() => {
+        fitFrame = 0;
+        fitBoard();
+      });
+    }).observe(el.field);
   }
 
   // ---------------------------------------------------------------- boot

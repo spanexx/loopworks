@@ -26,7 +26,8 @@ the rest of the harness still runs.
   workspace, do not edit them here; change the source under `../wireframe/loopworks/` and copy
   them again. A standalone clone carries the only copies.
 - `v1/js/app.js` owns the screen. It never decides a rule.
-- Progress and the theme choice stay in this browser's storage. No account, server or telemetry.
+- Progress, the theme and the sound choice stay in this browser's storage. No account, server or
+  telemetry.
 
 ## Git
 
