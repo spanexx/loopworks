@@ -1,0 +1,12 @@
+{
+  "name": "loopworks-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Loopworks App v1 - a static learning game shell around the Loopworks engine.",
+  "type": "module",
+  "scripts": {
+    "check": "node tools/verify.mjs",
+    "test": "node tools/verify.mjs"
+  },
+  "license": "UNLICENSED"
+}
