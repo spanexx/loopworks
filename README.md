@@ -30,10 +30,20 @@ published solution, and audits the page for external assets, absolute paths, sto
 contrast. A standalone clone has no `../wireframe/loopworks/`, so that one copy check has no source
 there; the rest of the harness still runs.
 
+`.githooks/pre-commit` runs that harness before a commit lands, in both shapes - the workspace and a
+copy of the staged files alone, the way the publish job sees them. Either one red stops the commit,
+so a push never arrives at a check job that is going to fail. It is live once the repository knows
+about it:
+
+```
+git config core.hooksPath .githooks
+```
+
 ## Layout
 
 - `v1/` - the current app; [v1/README.md](v1/README.md) describes its screen, editor and checks.
 - `tools/verify.mjs` - the plain-node harness.
+- `.githooks/pre-commit` - the local gate, the same harness before a commit.
 - `.github/workflows/deploy.yml` - the checks and the publish to the `deploy` branch.
 - `index.html` - the root redirect to the current version.
 - `package.json` - the `check` and `test` scripts; no dependencies.

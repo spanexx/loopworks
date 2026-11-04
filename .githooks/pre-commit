@@ -1,0 +1,47 @@
+#!/bin/sh
+# WHY: the publish workflow only ever ships what this gate has already run, so a red Actions run
+#      cannot come from a commit that left this machine. It runs the harness twice, in the two
+#      shapes it can meet: here in the game workspace, and alone in a clone like the runner's.
+#      A check that only passes in one of the two is exactly what failed the first remote run.
+# PACK: loopworks-app
+# 2026-11-04 qoder-agent: written on the learner's instruction - "set up precommit locally so we
+#      never have failed action on the remote". Live once `core.hooksPath` points at this folder.
+set -u
+
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+# WHY: a detached worktree holding only the site files has no harness to run, and the publish step
+#      makes commits inside one.
+if [ ! -f tools/verify.mjs ]; then
+  exit 0
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  printf 'pre-commit: node is not on the PATH of the shell that is committing, and the gate needs it.\n' >&2
+  printf 'pre-commit: nothing is committed. Run the commit from a shell where node answers.\n' >&2
+  exit 1
+fi
+
+tmp=$(mktemp -d) || exit 1
+cleanup() { rm -rf "$tmp"; }
+trap cleanup EXIT
+
+printf 'pre-commit: the workspace shape - every check, including the copied engine and packs\n'
+if ! node tools/verify.mjs; then
+  printf '\npre-commit: the harness is red here, so nothing is committed. Fix the checks, then commit again.\n' >&2
+  exit 1
+fi
+
+printf '\npre-commit: the clone shape - the staged files alone, with no workspace above them\n'
+if ! git checkout-index -a -f --prefix="$tmp/"; then
+  printf '\npre-commit: the staged files could not be copied out for the clone-shape run.\n' >&2
+  exit 1
+fi
+if ! (cd "$tmp" && node tools/verify.mjs); then
+  printf '\npre-commit: these staged files would fail the publish gate in a standalone clone.\n' >&2
+  printf 'pre-commit: nothing is committed.\n' >&2
+  exit 1
+fi
+
+printf '\npre-commit: both shapes green - the remote check job will pass on this commit.\n'
