@@ -4,6 +4,10 @@
 //      board and gives it back. The completion list comes from the engine, never from this file.
 // PACK: loopworks-app
 // 2026-11-04 qoder-agent: first build, following PRD-TRD sections 4-9, 17-21 and 24.
+// 2026-11-04 qoder-agent: the typing layout - the controller keeps the board on screen while the
+//      soft keyboard is up, following PRD-TRD section 28 and GRILL entry 30.
+// 2026-11-04 qoder-agent: the phone drawer is one row - the run buttons flank the line being typed
+//      and its height is pulled from one line by the edge, following GRILL entry 32.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -96,6 +100,11 @@
   const sug = { items: [], index: 0, from: 0, lineEnd: 0, dismissed: false };
   const MIN_PROGRAM = 180;
   const DEFAULT_PROGRAM = 280;
+  // WHY: on a phone the drawer is one row with the buttons beside the line, so its resting height
+  //      is that one line - the 42 px editor and the drawer's bottom padding - and the learner
+  //      pulls it taller from there instead of starting from a box three lines deep.
+  const ONE_LINE = 50;
+  const TIGHT_HEIGHT = 340;
 
   // ---------------------------------------------------------------- the board and the rail
 
@@ -172,10 +181,21 @@
     if (!level || view !== 'work') return;
     const rows = level.rows.length;
     const cols = level.rows[0].length;
-    const widthRoom = el.field.clientWidth - 48;
-    const heightRoom = el.field.clientHeight - 36 - 98;
+    // WHY: the field's own padding is read from the sheet, not guessed here - a phone narrows it and
+    //      typing narrows it again - so the board is always sized against the room that is really
+    //      inside the box it has to fit in.
+    const pad = host.getComputedStyle(el.field);
+    const roomX = Math.round(parseFloat(pad.paddingLeft) + parseFloat(pad.paddingRight));
+    const roomY = Math.round(parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom));
+    const widthRoom = el.field.clientWidth - roomX;
+    // WHY: 98 is the verdict and the log under the board. While typing, the sheet hides that pair,
+    //      so reserving their height would shrink the board against room that is no longer there
+    //      and pin it to its floor. The floor itself is lower while typing, because a board that
+    //      overflows its own box hides the line being typed.
+    const typing = typingOn();
+    const heightRoom = el.field.clientHeight - roomY - (typing ? 0 : 98);
     const byHeight = ((heightRoom - 22 - (rows - 1) * 5) * cols) / rows;
-    const width = Math.max(200, Math.min(480, widthRoom, byHeight));
+    const width = Math.max(typing ? 120 : 200, Math.min(480, widthRoom, byHeight));
     el.board.style.width = `${Math.round(width)}px`;
   }
 
@@ -349,6 +369,7 @@
 
   function startRun() {
     if (running) { pause(); return; }
+    closeKeyboard();
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -583,7 +604,11 @@
     el.suggest.style.maxHeight = '';
     const height = el.suggest.offsetHeight;
     const below = el.editor.clientHeight - point.top - 2;
-    const above = point.top - point.height - 4;
+    // WHY: while typing, the drawer holds only the editor and its controls, so a list that opens
+    //      upward can borrow the board area above the editor; its top is allowed to sit outside the
+    //      editor box for the same reason.
+    const borrowed = typingOn() ? el.field.clientHeight - el.editor.clientHeight - 12 : 0;
+    const above = point.top - point.height - 4 + borrowed;
     // WHY: with the view snapped to the last line the caret sits at the bottom edge, so a list that
     //      only opens downward would land outside the drawer. It opens where the room is, and
     //      shrinks with its own scrollbar rather than spilling over the run button.
@@ -591,7 +616,8 @@
     if (flip) {
       const room = Math.max(40, Math.min(height, above));
       el.suggest.style.maxHeight = `${room}px`;
-      el.suggest.style.top = `${Math.round(Math.max(0, point.top - point.height - room - 2))}px`;
+      const top = Math.round(point.top - point.height - room - 2);
+      el.suggest.style.top = `${typingOn() ? top : Math.max(0, top)}px`;
     } else {
       if (height > below) el.suggest.style.maxHeight = `${Math.max(40, below)}px`;
       el.suggest.style.top = `${Math.round(point.top + 2)}px`;
@@ -635,15 +661,27 @@
 
   // ---------------------------------------------------------------- the drawer
 
+  function drawerFloor() { return isNarrow() ? ONE_LINE : MIN_PROGRAM; }
+
+  function drawerDefault() { return isNarrow() ? ONE_LINE : DEFAULT_PROGRAM; }
+
   function clampHeight(height) {
     const mainHeight = el.main.getBoundingClientRect().height;
-    const max = Math.max(MIN_PROGRAM, mainHeight - 220);
-    return Math.max(MIN_PROGRAM, Math.min(height, max));
+    // WHY: the reserve is what the bar, the panel and the status line need back before the row may
+    //      grow. While typing the panel gives up the verdict and the trace, so the row may be
+    //      pulled taller than the rest layout would allow.
+    const reserve = typingOn() ? 170 : 220;
+    const floor = drawerFloor();
+    const max = Math.max(floor, mainHeight - reserve);
+    return Math.max(floor, Math.min(height, max));
   }
 
   function setProgramHeight(height) {
     const next = clampHeight(height);
     el.program.style.height = `${next}px`;
+    // WHY: a pull made while typing is the height he wants to keep working at, so it is the height
+    //      that comes back with the keyboard, not the one that was there before the focus.
+    if (typingOn()) keyboard.programHeight = `${next}px`;
     const mainHeight = el.main.getBoundingClientRect().height || 1;
     el.splitter.setAttribute('aria-valuenow', String(Math.round((next / mainHeight) * 100)));
   }
@@ -671,13 +709,90 @@
       drag = null;
       doc.body.classList.remove('is-dragging');
     });
-    el.splitter.addEventListener('dblclick', () => setProgramHeight(DEFAULT_PROGRAM));
+    el.splitter.addEventListener('dblclick', () => setProgramHeight(drawerDefault()));
     el.splitter.addEventListener('keydown', (event) => {
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
       event.preventDefault();
       const step = event.key === 'ArrowUp' ? 24 : -24;
       setProgramHeight(el.program.getBoundingClientRect().height + step);
     });
+  }
+
+  // ---------------------------------------------------------------- typing under a keyboard
+
+  // WHY: on a phone the soft keyboard does not make this page shorter. On iOS it only shrinks the
+  //      window the user sees, and the browser slides that window down to the editor - the main
+  //      panel, which is the thing being programmed, leaves the screen. So while the editor holds
+  //      focus on a narrow screen the app is pinned to the height that is actually visible and the
+  //      board is refitted into what is left: the board and the line being typed share one screen.
+  //      Two signals say "a keyboard is over the editor": the visible window is shorter than the
+  //      layout it is panned across, or the layout itself is shorter than the `resting` height
+  //      measured while nothing was focused - Chrome resizes the layout, but only when asked to.
+  const keyboard = { resting: 0, programHeight: '' };
+
+  function isNarrow() {
+    return !!(host.matchMedia && host.matchMedia('(max-width: 900px)').matches);
+  }
+
+  function visibleHeight() {
+    return Math.round(host.visualViewport ? host.visualViewport.height : host.innerHeight);
+  }
+
+  function typingOn() { return doc.body.classList.contains('is-typing'); }
+
+  // WHY: under this many visible pixels the bar, the draggable edge and the one-row drawer leave
+  //      the panel less than one row of cells - measured at 320 x 568 with a 330 px keyboard, where
+  //      the board overflowed its own box. Tight mode spends the status line on the panel; it
+  //      returns with the keyboard.
+  function setTight(on) {
+    doc.body.classList.toggle('is-typing-tight', on && visibleHeight() < TIGHT_HEIGHT);
+  }
+
+  function setTyping(on) {
+    if (on === typingOn()) return;
+    doc.body.classList.toggle('is-typing', on);
+    setTight(on);
+    if (on) {
+      // WHY: the drawer height is an inline style written by the splitter, and an inline style
+      //      outranks the sheet, so it has to be lifted while typing and handed back on the way out
+      //      - a height the learner dragged stays dragged.
+      keyboard.programHeight = el.program.style.height;
+      el.program.style.height = '';
+      doc.documentElement.style.setProperty('--app-visible', `${visibleHeight()}px`);
+      // WHY: the browser may have panned the document to reach the editor before this class landed.
+      //      Pinned to the visible height the app needs no pan, so the one scroll reset puts the
+      //      board back in view.
+      host.scrollTo(0, 0);
+    } else {
+      doc.documentElement.style.removeProperty('--app-visible');
+      el.program.style.height = keyboard.programHeight || `${drawerDefault()}px`;
+    }
+    fitBoard();
+  }
+
+  function syncKeyboard() {
+    const visible = visibleHeight();
+    const layout = Math.round(host.innerHeight);
+    const focused = doc.activeElement === el.code;
+    // WHY: an editor without focus has no keyboard over it, so every unfocused beat re-measures the
+    //      resting height from the layout, which a phone browser leaves alone. Only a real window
+    //      change or a Chrome keyboard moves it - which is exactly why the layout, not the visible
+    //      height, is the yardstick here.
+    if (!focused) keyboard.resting = layout;
+    const panned = visible < layout - 8;
+    const resized = keyboard.resting - layout > 80;
+    const typing = isNarrow() && focused && (panned || resized);
+    if (typing && typingOn()) {
+      doc.documentElement.style.setProperty('--app-visible', `${visible}px`);
+      setTight(true);
+    }
+    setTyping(typing);
+  }
+
+  // WHY: running is reading, not typing, and a keyboard over the bottom half of the screen hides
+  //      the drone while it moves. Stepping does not close it: that loop alternates type and tick.
+  function closeKeyboard() {
+    if (typingOn()) el.code.blur();
   }
 
   // ---------------------------------------------------------------- views
@@ -783,7 +898,10 @@
     if (snapGuard) { snapGuard = false; return; }
     if (sug.items.length) hideSuggest();
   });
-  el.code.addEventListener('blur', () => hideSuggest());
+  el.code.addEventListener('blur', () => {
+    hideSuggest();
+    setTyping(false);
+  });
   el.code.addEventListener('keydown', (event) => {
     if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Escape' && sug.items.length) {
@@ -861,9 +979,21 @@
   });
 
   host.addEventListener('resize', () => {
-    setProgramHeight(el.program.getBoundingClientRect().height);
+    syncKeyboard();
+    // WHY: while typing the drawer height is the sheet's, not an inline one; re-clamping here would
+    //      write the inline height straight back and fight the layout that keeps the board in view.
+    if (!typingOn()) setProgramHeight(el.program.getBoundingClientRect().height);
     fitBoard();
   });
+
+  el.code.addEventListener('focus', syncKeyboard);
+
+  if (host.visualViewport) {
+    // WHY: the visual viewport is the only cross-browser signal that a soft keyboard is up - on iOS
+    //      the layout never changes, and on Chrome it changes only because the page asks for
+    //      `interactive-widget=resizes-content` in the viewport meta.
+    host.visualViewport.addEventListener('resize', syncKeyboard);
+  }
 
   if (host.ResizeObserver) {
     // WHY: sizing the board inside the observer's own delivery writes layout while layout is
@@ -883,13 +1013,14 @@
 
   initSplitter();
   setRunButton();
+  keyboard.resting = Math.round(host.innerHeight);
   const next = LoopworksEvidence.nextUnsolved(shelf, progress);
   const start = next || (shelf.length ? { pack: shelf[0], level: shelf[0].levels[0] } : null);
   if (!start) {
     setVerdict('stuck', 'Stuck', 'No pack on the shelf.', WARN);
   } else {
     openLevel(start.pack, start.level);
-    setProgramHeight(DEFAULT_PROGRAM);
+    setProgramHeight(drawerDefault());
     showView(next ? 'work' : 'evidence');
     if (next && host.matchMedia && host.matchMedia('(min-width: 901px)').matches) el.code.focus();
   }

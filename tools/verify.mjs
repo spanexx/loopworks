@@ -5,6 +5,8 @@
 // PACK: loopworks-app
 // 2026-11-04 qoder-agent: written before the page existed, so the promises in
 //                          PRD-TRD-loopworks-app.md are the specification, not a description.
+// 2026-11-04 qoder-agent: six typing and phone-layout checks, written against PRD-TRD section 28
+//                          and GRILL entry 32 before the sheet and the controller changed.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import vm from 'node:vm';
@@ -632,6 +634,82 @@ check('app: a phone can type without zooming the page', () => {
   assert(/#code,\s*\.gutter\s*{[^}]*font-size:\s*16px/.test(narrow), 'the editor is under 16px on a phone');
   assert(/#code,\s*\.gutter\s*{[^}]*line-height:\s*24px/.test(narrow), 'the gutter and the code have different line heights');
   return '16px code and gutter on phones';
+});
+
+// WHY: the learner's phone showed the board panned out of sight the moment the keyboard opened.
+//      The fix is a second layout that only exists while the editor holds focus, so these checks
+//      pin the whole chain: the page asks for it, the sheet owns it, the controller drives it.
+check('app: the page lets a keyboard take the layout height, not just the view', () => {
+  const page = read(path.join(v1, 'index.html'));
+  const meta = page.match(/<meta name="viewport" content="([^"]+)"/);
+  assert(meta, 'the page has no viewport meta');
+  assert(/interactive-widget=resizes-content/.test(meta[1]), 'a keyboard only slides the window, hiding the board');
+  return meta[1];
+});
+
+check('app: the typing layout pins the app to the visible height and clears the lower row', () => {
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+  assert(/body\.is-typing \.app\s*{[^}]*height:\s*var\(--app-visible/.test(narrow), 'the app does not take the visible height while typing');
+  assert(/body\.is-typing \.verdict[^}]*body\.is-typing \.log\s*{[^}]*display:\s*none/.test(narrow), 'the verdict and the log keep their room');
+  assert(/body\.is-typing \.field\s*{[^}]*min-height:\s*0/.test(narrow), 'the field keeps a floor while typing');
+  assert(!/is-typing \.splitter/.test(narrow), 'the drawer edge leaves while typing, so the row cannot be pulled taller');
+  assert(/body\.is-typing \.program\s*{[^}]*height:\s*50px/.test(narrow), 'the row grows with the program instead of scrolling to the caret');
+  return 'a compact layout under a keyboard';
+});
+
+check('app: the phone drawer is one row with the work buttons beside the line', () => {
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const app = read(path.join(v1, 'js', 'app.js'));
+  const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+  assert(/\.program\s*{[^}]*flex-direction:\s*row/.test(narrow), 'the drawer stacks its buttons under the line');
+  assert(/\.program\s*{[^}]*align-items:\s*flex-end/.test(narrow), 'the buttons drift to the middle of a drawer pulled taller');
+  assert(/\.program \.editor\s*{[^}]*align-self:\s*stretch/.test(narrow), 'the editor keeps its one-line height when the drawer grows');
+  assert(/\.program \.controls\s*{\s*display:\s*contents/.test(narrow), 'the control row stays one block under the line');
+  assert(/\.program \.controls-left\s*{\s*order:\s*1/.test(narrow), 'step and reset do not sit left of the line');
+  assert(/\.program \.editor\s*{[^}]*order:\s*2/.test(narrow), 'the line is not between the two groups');
+  assert(/\.program \.controls-right\s*{\s*order:\s*3/.test(narrow), 'the level arrows and run do not sit right of the line');
+  assert(/\.editor \{\s*grid-template-columns:\s*24px/.test(narrow), 'the gutter still takes a thumb of the line');
+  assert(/\.controls button \{\s*width:\s*28px/.test(narrow), 'the work buttons keep their desktop size on a phone');
+  assert(/\.controls \.icon-only \{\s*width:\s*28px/.test(narrow), 'the arrow buttons keep their wide width and squeeze the line');
+  assert(/\.topbar\s*{\s*gap:\s*4px;\s*padding:\s*4px 8px/.test(narrow), 'the narrow bar is as tall as a work row');
+  assert(/const ONE_LINE = 50;/.test(app) && /function drawerFloor\(\) \{ return isNarrow\(\) \? ONE_LINE : MIN_PROGRAM; \}/.test(app), 'the drawer cannot be pulled down to one line on a phone');
+  assert(/setProgramHeight\(drawerDefault\(\)\)/.test(app), 'the phone drawer opens at the desktop height');
+  assert(/\.splitter\s*{[^}]*background:\s*transparent/.test(narrow), 'the drag edge paints its own container above the input');
+  assert(/\.splitter-grip\s*{[^}]*bottom:\s*-4px/.test(narrow), 'the grip floats in a band instead of straddling the input box');
+  return 'one line, step and reset left, arrows and run right, 35 px bar, grip on the box';
+});
+
+check('app: the controller reads the visible viewport and marks the screen as typing', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/host\.visualViewport/.test(app), 'nothing measures the visible height');
+  assert(/visualViewport\.addEventListener\('resize'/.test(app), 'a keyboard opening is never noticed');
+  assert(/classList\.toggle\('is-typing'/.test(app), 'the typing class is never set');
+  assert(/setProperty\('--app-visible'/.test(app), 'the sheet is never told the visible height');
+  assert(/doc\.activeElement === el\.code/.test(app), 'nothing knows whether the editor holds focus');
+  return 'visualViewport -> is-typing -> --app-visible';
+});
+
+check('app: the board is refitted to the room typing leaves, and a run hands the screen back', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/heightRoom = el\.field\.clientHeight - roomY - \(typing \? 0 : 98\)/.test(app), 'the board still reserves the hidden verdict row while typing');
+  assert(/parseFloat\(pad\.paddingTop\)/.test(app), 'the board is sized against a guessed field padding, not the one the sheet gives');
+  assert(/Math\.max\(typing \? 120 : 200,/.test(app), 'the board keeps its wide-screen floor while typing, and overflows the drawer');
+  assert(/el\.program\.style\.height = ''/.test(app), 'the dragged drawer height outranks the typing layout');
+  assert(/function closeKeyboard\(\)[\s\S]{0,80}el\.code\.blur\(\)/.test(app), 'a run does not close the keyboard');
+  const run = app.slice(app.indexOf('function startRun()'));
+  assert(/closeKeyboard\(\)/.test(run.slice(0, 300)), 'Run leaves the keyboard over the board');
+  return 'board follows the room, Run clears the keyboard';
+});
+
+check('app: a short visible window spends the status line on the board', () => {
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const app = read(path.join(v1, 'js', 'app.js'));
+  const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+  assert(/const TIGHT_HEIGHT = 340;/.test(app), 'nothing knows where the typing layout runs out of room');
+  assert(/visibleHeight\(\) < TIGHT_HEIGHT/.test(app), 'the tight class is never decided by the visible height');
+  assert(/body\.is-typing-tight \.statusbar\s*{\s*display:\s*none/.test(narrow), 'the status line keeps its room in a tight window');
+  return 'one row of work, no status line, below 340 px visible';
 });
 
 check('app: the words live in a dialog opened from the top bar', () => {
