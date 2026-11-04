@@ -1,0 +1,58 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-deploy
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm run check
+
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Publish the site to the deploy branch
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin deploy
+          root="$(mktemp -d)"
+          site="$root/site"
+          git worktree add --detach "$site" FETCH_HEAD
+          rm -rf "$site/v1"
+          install -d "$site/v1/css" "$site/v1/js/packs"
+          touch "$site/.nojekyll"
+          cp index.html "$site/index.html"
+          cp v1/index.html "$site/v1/index.html"
+          cp v1/css/app.css "$site/v1/css/app.css"
+          cp v1/js/*.js "$site/v1/js/"
+          cp v1/js/packs/*.js "$site/v1/js/packs/"
+          cd "$site"
+          git add --all -- index.html .nojekyll v1
+          if git diff --cached --quiet; then
+            echo "The deploy branch is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "deploy: publish ${GITHUB_SHA::12}"
+          git push origin HEAD:deploy

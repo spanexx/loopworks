@@ -1,37 +1,45 @@
-# Loopworks App v1
+# Loopworks App
 
-The product shell around the Loopworks engine. Static files only: no build, no server, no network
-at run time.
+The product app for Loopworks, a desktop learning game that teaches programming logic by having
+the player type short instruction lines. Static files only: no build, no server, no network at run
+time, and no account. Progress, theme and sound stay in this browser's storage.
 
-## Open it
+## Versions
 
-Double-click `v1/index.html`, or open the folder in a browser. It also works on GitHub Pages from
-the repository root; `index.html` redirects to `v1/`.
+The repository root is the app, not one version. Each version lives in its own folder, so a later
+version can sit beside the one before it:
+
+| Folder | Version | State |
+|---|---|---|
+| `v1/` | Depot Console | The current playable version. |
+
+`index.html` at the root redirects to the current version, `v1/`. A future version will get its
+own folder and the redirect will move when the learner chooses the next one. The engine and packs
+are copied into each version; they are not edited here.
+
+## Play it
+
+Open `v1/index.html` from disk, or use the root `index.html` redirect. The app also runs on GitHub
+Pages; the `deploy` branch is the published site.
 
 ## Check it
 
-```
-npm run check
-```
+`npm run check` runs `tools/verify.mjs` with plain Node, no dependencies. In the game workspace it
+checks the copied engine and packs byte-for-byte against `../wireframe/loopworks/`, replays every
+published solution, and audits the page for external assets, absolute paths, storage keys and theme
+contrast. A standalone clone has no `../wireframe/loopworks/`, so that one copy check has no source
+there; the rest of the harness still runs.
 
-Runs `tools/verify.mjs` with plain Node, no dependencies. In the game workspace it checks the
-copied engine and packs byte-for-byte against `../wireframe/loopworks/`, replays every published
-solution, and audits the page for external assets, absolute paths, storage keys and theme contrast.
-A standalone clone has no `../wireframe/loopworks/`, so that one copy check has no source there;
-the rest of the harness still runs.
+## Layout
 
-## What is inside
-
-- `v1/js/engine.js` and `v1/js/packs/` are copies of the tested prototype files. In the game
-  workspace, do not edit them here; change the source under `../wireframe/loopworks/` and copy
-  them again. A standalone clone carries the only copies.
-- `v1/js/app.js` owns the screen. It never decides a rule.
-- Progress, the theme and the sound choice stay in this browser's storage. No account, server or
-  telemetry.
+- `v1/` - the current app; [v1/README.md](v1/README.md) describes its screen, editor and checks.
+- `tools/verify.mjs` - the plain-node harness.
+- `.github/workflows/deploy.yml` - the checks and the publish to the `deploy` branch.
+- `index.html` - the root redirect to the current version.
+- `package.json` - the `check` and `test` scripts; no dependencies.
 
 ## Git
 
-This folder is its own repository. The development copy lives inside the game workspace, which is
-where the byte-copy check can see `../wireframe/loopworks/`.
-
-The hooks folder is not part of this app yet.
+This folder is its own repository. `main` is the source branch; Pages publishes from the `deploy`
+branch. The development copy lives inside the game workspace, where the byte-copy check can see
+`../wireframe/loopworks/`.
