@@ -965,8 +965,11 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
   /* WHY: the learner asked for icons and the logo on small screens; the wordmark is the title and
      stays. The level label, the goal and the tab labels leave, and the goal moves to the status
-     bar where one ellipsized line is enough. */
-  .topbar { gap: 6px; padding: 8px 10px; }
+     bar where one ellipsized line is enough. The bar is a head, not a work surface, so it is kept
+     to the height of its own icons. */
+  .topbar { gap: 4px; padding: 4px 8px; }
+
+  .brand { gap: 6px; }
 
   .where,
   .goal-top,
@@ -975,17 +978,126 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   .icon-btn,
   .tab { flex: none; }
 
-  .icon-btn { width: 28px; height: 28px; }
+  .icon-btn { width: 26px; height: 26px; }
 
-  .tab { padding: 6px 8px; }
+  .icon-btn svg { width: 13px; height: 13px; }
 
-  .tools { gap: 10px; }
+  .tab { padding: 4px 6px; }
 
-  .fact + .fact { padding-left: 10px; }
+  .tab svg { width: 12px; height: 12px; }
+
+  .tools { gap: 8px; }
+
+  .fact { gap: 4px; font-size: 11px; }
+
+  .fact svg { width: 12px; height: 12px; }
+
+  .fact + .fact { padding-left: 8px; }
 
   .field { min-height: 320px; padding: 16px 14px; }
 
-  .program { padding: 10px 14px 12px; }
+  /* WHY: the drawer on a phone is one row. Step and reset sit left of the line being typed, the
+     level arrows and run sit right of it, and the head, the hint and a whole button row go away -
+     a program is "forward" or "turn left", so the box it needs is one line, and every pixel the
+     two-row drawer spent on chrome is paid back to the panel. The edge above it stays draggable,
+     so a longer program can be read by pulling the row taller - and because the buttons sit on the
+     bottom edge, that pull grows the box upward into the panel and leaves every verb exactly where
+     the thumb already is. */
+  .program {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 4px;
+    height: auto;
+    min-height: 0;
+    padding: 0 8px 8px;
+  }
+
+  .program .controls { display: contents; }
+
+  .program .controls-left { order: 1; }
+
+  .program .editor {
+    order: 2;
+    flex: 1 1 auto;
+    align-self: stretch;
+    min-width: 0;
+    min-height: 42px;
+    margin: 0;
+  }
+
+  .program .controls-right { order: 3; }
+
+  .controls-left,
+  .controls-right { flex: none; align-items: center; gap: 4px; }
+
+  .editor { grid-template-columns: 24px minmax(0, 1fr); }
+
+  .gutter { padding: 8px 5px 8px 0; }
+
+  .controls button { width: 28px; min-height: 28px; padding: 0; }
+
+  .controls .icon-only { width: 28px; }
+
+  .controls svg { width: 12px; height: 12px; }
+
+  .controls .primary { width: 32px; min-height: 32px; }
+
+  .run-icon,
+  .run-icon svg { width: 15px; height: 15px; }
+
+  .program-head,
+  .hint { display: none; }
+
+  /* WHY: the edge is the input's own grab tab, not a band of its own. A strip with borders and a
+     panel background reads as a second container sitting above the box, so on a phone the band
+     gives up its paint, keeps its 14 px of hit area, and the grip drops onto the top border of the
+     editor - which is also where the drawer's own top padding goes. */
+  .splitter {
+    height: 14px;
+    background: transparent;
+    border: 0;
+  }
+
+  .splitter-grip {
+    top: auto;
+    bottom: -4px;
+    width: 40px;
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  /* WHY: a soft keyboard does not make this page shorter - on iOS it only shrinks the window the
+     user sees, and that window slid down to the editor and left the board behind. While the editor
+     holds focus the app takes the height that is actually visible: the verdict and the trace step
+     aside (the sound and the status line still say what happened) and the board is refitted to what
+     is left, so the panel and the line being typed share one screen. The row of buttons beside that
+     line stays put - they are the work, not chrome. `--app-visible` is written by the controller;
+     100dvh is the fallback on a browser that resizes the layout itself. */
+  body.is-typing { overflow: hidden; }
+
+  body.is-typing .app {
+    height: var(--app-visible, 100dvh);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  body.is-typing .field { min-height: 0; padding: 8px 14px; }
+
+  body.is-typing .verdict,
+  body.is-typing .log { display: none; }
+
+  /* WHY: 50 px is the one-line row the controller drags from - the 42 px editor and the drawer's
+     bottom padding - and it has to be a definite height: a drawer that sizes itself to its content
+     grows a line every time the player presses return, and the box then eats the panel instead of
+     scrolling to the caret. The dragged height is an inline style, so pulling the row taller still
+     outranks this. */
+  body.is-typing .program { height: 50px; }
+
+  /* WHY: measured at 320 x 568 with a 330 px keyboard, only 238 px stay visible. The bar, the
+     draggable edge and the row of the line being typed leave the panel less than one row of cells
+     once the status line is counted, and the board overflowed its own box. Tight mode spends the
+     status line on the panel; it returns with the keyboard. */
+  body.is-typing-tight .statusbar { display: none; }
 
   /* WHY: iOS Safari zooms the whole page when a control under 16 px takes focus, and the program
      is the only input on the screen. The code and its gutter grow together so the numbers stay
