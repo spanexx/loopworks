@@ -8,7 +8,7 @@
 // 2026-11-04 qoder-agent: six typing and phone-layout checks, written against PRD-TRD section 28
 //                          and GRILL entry 32 before the sheet and the controller changed.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import vm from 'node:vm';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,10 +19,17 @@ const v1 = path.join(appRoot, 'v1');
 const source = path.resolve(appRoot, '..', 'wireframe', 'loopworks');
 
 const results = [];
+// WHY: a check can only run where its inputs live. Returning `{ skip: reason }` records a check that
+//      had nothing to compare against, so a standalone clone reports it honestly instead of failing
+//      the gate that protects every other promise.
 function check(name, fn) {
   try {
     const detail = fn();
-    results.push({ name, ok: true, detail: detail || '' });
+    if (detail && typeof detail === 'object') {
+      results.push({ name, ok: true, skipped: true, detail: detail.skip });
+    } else {
+      results.push({ name, ok: true, detail: detail || '' });
+    }
   } catch (err) {
     results.push({ name, ok: false, detail: err.message });
   }
@@ -80,6 +87,9 @@ function play(packId, levelId, program) {
 // WHY: the app is a surface over the prototype's rules. A copy that has drifted is a second set of
 //      rules pretending to be the first, which is exactly what the layering rule forbids.
 check('app: the engine and both packs are byte-for-byte copies', () => {
+  if (!existsSync(source)) {
+    return { skip: `the game workspace with ${path.relative(appRoot, source)} is not here` };
+  }
   const pairs = [
     ['js/engine.js', path.join(source, 'engine.js')],
     ['js/packs/depot.js', path.join(source, 'packs', 'depot.js')],
@@ -843,9 +853,14 @@ function luminance(rgb) {
 
 // WHY: a failure has to say which promise broke, so the report names the check and the reason.
 const failed = results.filter((result) => !result.ok);
+const skipped = results.filter((result) => result.skipped);
+const runnable = results.length - skipped.length;
 results.forEach((result) => {
-  const mark = result.ok ? 'ok  ' : 'FAIL';
+  const mark = result.skipped ? 'SKIP' : result.ok ? 'ok  ' : 'FAIL';
   process.stdout.write(`${mark}  ${result.name}${result.detail ? ` - ${result.detail}` : ''}\n`);
 });
-process.stdout.write(`\n${results.length - failed.length}/${results.length} checks passed\n`);
+const skipNote = skipped.length
+  ? `, ${skipped.length} skipped - ${skipped.map((result) => result.detail).join('; ')}`
+  : '';
+process.stdout.write(`\n${runnable - failed.length}/${runnable} checks passed${skipNote}\n`);
 if (failed.length > 0) process.exit(1);
