@@ -6,10 +6,12 @@
 // PACK: loopworks-app
 // 2026-11-04 qoder-agent: built to PRD-TRD-loopworks-level-import.md sections 6 to 11 and the decisions
 //      locked in GRILL-loopworks-level-import.txt.
+// 2026-11-05 qoder-agent: the proof step, to PRD-TRD-loopworks-level-proving.md sections 1 to 5 and 7.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
   const engine = host.Loopworks;
+  const prover = host.LoopworksProver;
   const doc = host.document;
 
   const KEY = 'loopworks.app.user-packs.v1';
@@ -124,13 +126,35 @@
     });
   }
 
+  // WHY: the prover is the only door this file has to "can this level be won", and it decides nothing here.
+  //      This sorts the prover's four words: two of them are refusals, because each is a fact a finished
+  //      search proved; the other two are notes, because "not proven" is a limit of this search and a level
+  //      nobody has proved yet is still a level the engine will run.
+  function proveErrors(candidate, errors, notes) {
+    if (!prover) {
+      errors.push('this app was opened without its level checker, so nothing can be added from here. Reload the page, and if it still says this the app is missing js/prover.js.');
+      return;
+    }
+    (Array.isArray(candidate.levels) ? candidate.levels : []).forEach((level) => {
+      if (!level || typeof level !== 'object' || !level.id) return;
+      const verdict = prover.prove(candidate, level);
+      const said = `level "${level.id}": ${prover.sentence(verdict)}`;
+      if (verdict.verdict === 'unwinnable' || verdict.verdict === 'proof fails') errors.push(said);
+      else notes.push(said);
+    });
+  }
+
   // WHY: the engine's sentences come first, because they are the ones an author reads in the harness.
   //      The size caps and the id collisions are this file's own rules, and they run before anything is
   //      saved so a bad pack is refused while the player is still looking at the box they typed it into.
-  function validate(candidates, shelf) {
+  //      The search is last and only when the caller asks for it: it is the expensive answer, and a pack
+  //      the cheap rules already refused has no verdict worth three seconds of a phone.
+  function validate(candidates, shelf, options) {
+    const wants = options || {};
     const errors = [];
+    const notes = [];
     if (!Array.isArray(candidates) || candidates.length === 0) {
-      return { ok: false, errors: ['there is nothing to add yet: a pack is one level pack written between { and }.'] };
+      return { ok: false, errors: ['there is nothing to add yet: a pack is one level pack written between { and }.'], notes };
     }
     const known = knownIds(shelf);
     const seen = { packs: [], levels: [] };
@@ -143,11 +167,13 @@
         errors.push('an added pack has no id. The id is how this app tells one pack from another.');
         return;
       }
+      const before = errors.length;
       engine.validatePack(candidate).forEach((message) => errors.push(message));
       sizeErrors(candidate, errors);
       idErrors(candidate, known, seen, errors);
+      if (wants.prove && errors.length === before) proveErrors(candidate, errors, notes);
     });
-    return { ok: errors.length === 0, errors };
+    return { ok: errors.length === 0, errors, notes };
   }
 
   // WHY: text first, then data. A file ending in .js is refused here for the same reason a pasted one
@@ -166,18 +192,20 @@
   }
 
   // WHY: called once when the page loads this file, which is before js/app.js reads the shelf. A pack
-  //      that does not hold up is left off and reported; the shipped levels keep working.
+  //      that does not hold up is left off and reported; the shipped levels keep working. The search does
+  //      not run here: these packs were checked the moment they were added, and a page load that searched
+  //      every one of them again would be a wait the player cannot explain.
   function load(given) {
     const errors = [];
     const stored = read(given, (message) => errors.push(message));
-    if (stored.length === 0) return { ok: errors.length === 0, loaded: [], errors };
+    if (stored.length === 0) return { ok: errors.length === 0, loaded: [], errors, notes: [] };
     const verdict = validate(stored);
     if (!verdict.ok) {
       verdict.errors.forEach((message) => errors.push(message));
-      return { ok: false, loaded: [], errors };
+      return { ok: false, loaded: [], errors, notes: verdict.notes };
     }
     stored.forEach((pack) => engine.register(pack));
-    return { ok: true, loaded: stored.slice(), errors };
+    return { ok: true, loaded: stored.slice(), errors, notes: verdict.notes };
   }
 
   // WHY: registering has to happen while this file is being read, because js/app.js asks for the shelf
@@ -206,9 +234,12 @@
   };
 
   // WHY: one problem to a line. Three of the engine's sentences run together into one paragraph read as
-  //      a wall, and the player has to find the row the pack got wrong.
-  function showProblems(lines) {
+  //      a wall, and the player has to find the row the pack got wrong. The tone tells the sheet what the
+  //      lines are - a refusal, a verdict, a wait - because one red rule would read a good level as a
+  //      failure.
+  function showProblems(lines, tone) {
     el.error.textContent = lines.join('\n');
+    el.error.className = tone ? `pack-add-error ${tone}` : 'pack-add-error';
     el.error.hidden = lines.length === 0;
   }
 
@@ -253,6 +284,11 @@
     else el.modal.setAttribute('open', '');
   }
 
+  // WHY: how long the verdict stays on the screen before the page reloads. The reload is how an added
+  //      level reaches the level line and the Dictionary, and a verdict that is gone before it can be read
+  //      is no evidence at all - so the answer is painted first and the reload waits for it.
+  const ANSWER_BEAT = 900;
+
   function addIt() {
     showProblems([]);
     const parsed = parse(el.text.value);
@@ -260,20 +296,36 @@
       showProblems(parsed.errors);
       return;
     }
-    const verdict = validate(parsed.packs);
+    // WHY: the cheap rules first, in this turn. A pack with a short row or a stolen id has already been
+    //      refused before the search is asked for anything.
+    const plain = validate(parsed.packs);
+    if (!plain.ok) {
+      showProblems(plain.errors);
+      return;
+    }
+    showProblems(['checking this level can be won'], 'checking');
+    // WHY: the search runs on the page's own thread, so it needs a turn of the event loop of its own. A
+    //      browser draws nothing while the handler that asked for it is still running, and the player would
+    //      sit behind a frozen dialog wondering whether the button took.
+    host.setTimeout(() => proveAndSave(parsed.packs), 0);
+  }
+
+  function proveAndSave(packs) {
+    const verdict = validate(packs, null, { prove: true });
     if (!verdict.ok) {
       showProblems(verdict.errors);
       return;
     }
-    const written = write(read(host).concat(parsed.packs), host);
+    const written = write(read(host).concat(packs), host);
     if (!written.ok) {
       showProblems(written.errors);
       return;
     }
+    showProblems(verdict.notes.concat(['added. The page is reloading.']), 'note');
     // WHY: the shelf is read once, by js/app.js, and rebuilding the level line, the Dictionary and the
     //      Evidence list underneath a live shelf is a bigger change than reloading the page with the
     //      data already saved.
-    host.location.reload();
+    host.setTimeout(() => host.location.reload(), ANSWER_BEAT);
   }
 
   el.open.addEventListener('click', open);

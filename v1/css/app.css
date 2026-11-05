@@ -1029,6 +1029,12 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   overflow-wrap: anywhere;
 }
 
+/* WHY: one line carries three kinds of message. The red rule above is a refusal; a verdict the level was
+   kept for reads in the amber the app already uses for what is worth noticing, and the wait for it in
+   grey - so a level that proved nothing is never painted as a level that failed. */
+.pack-add-error.checking { border-left-color: var(--edge-strong); color: var(--muted); }
+.pack-add-error.note { border-left-color: var(--amber-ink); color: var(--amber-ink); }
+
 .pack-add-saved { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px dashed var(--edge-strong); }
 
 .pack-add-list { display: flex; flex-direction: column; }

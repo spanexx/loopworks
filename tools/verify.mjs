@@ -113,7 +113,7 @@ function play(packId, levelId, program) {
 //      rules pretending to be the first, which is exactly what the layering rule forbids. The list of
 //      files to compare comes from the prototype folder, so a pack that was never copied is red here
 //      rather than simply absent from the shelf.
-check('app: the engine, every pack and the answer key are byte-for-byte copies', () => {
+check('app: the engine, the checker, every pack and the answer key are byte-for-byte copies', () => {
   if (!existsSync(source)) {
     return { skip: `the game workspace with ${path.relative(appRoot, source)} is not here` };
   }
@@ -127,6 +127,7 @@ check('app: the engine, every pack and the answer key are byte-for-byte copies',
   assert(noOriginal.length === 0, `the app ships packs with no original in the prototype tree: ${noOriginal.join(', ')}`);
   const pairs = [
     [path.join(v1, 'js', 'engine.js'), path.join(source, 'engine.js')],
+    [path.join(v1, 'js', 'prover.js'), path.join(source, 'prover.js')],
     [answersPath, path.join(source, 'solutions.js')],
     ...originals.map((name) => [path.join(v1, 'js', 'packs', name), path.join(source, 'packs', name)])
   ];
@@ -165,6 +166,24 @@ check('app: the engine names no pack and carries no subject', () => {
     assert(!text.includes(word), `engine.js names "${word}"`);
   });
   return 'engine stays subject-blind';
+});
+
+// WHY: the checker is a second file the engine's rules flow through, so the same rule reaches it - and the
+//      words are taken from the shelf this app actually ships, so a third pack that names its own subject
+//      in the checker is caught without anyone editing a list here. "sentence" is the app's own word for
+//      what a Goal reads as, so it is asked for as a subject phrase, not as a bare word.
+check('app: the checker names no subject either', () => {
+  const subject = new Set(['market', 'warehouse', 'sentence pack']);
+  shelf().forEach((pack) => {
+    `${pack.id} ${pack.name}`.toLowerCase().split(/[^a-z0-9]+/).forEach((word) => {
+      if (word.length > 4) subject.add(word);
+    });
+  });
+  const text = read(path.join(v1, 'js', 'prover.js')).toLowerCase();
+  const named = [...subject].filter((word) => text.includes(word)).sort();
+  assert(named.length === 0, `js/prover.js names ${named.join(', ')}`);
+  assert(/loopworks-level-proving/.test(text), 'js/prover.js carries no PACK line, so its copy has no origin');
+  return `${subject.size} subject words from ${shelf().length} packs, none in the checker`;
 });
 
 // WHY: the published solutions come from tools/solutions.js, read once at the top of this file. They
@@ -292,7 +311,7 @@ check('app: the page loads the theme first, then the rules, every pack on disk, 
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
   const isPack = (src) => /^js\/packs\/[a-z0-9-]+\.js$/.test(src);
   const own = scripts.filter((src) => !isPack(src));
-  const expected = ['js/theme.js', 'js/engine.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/user-packs.js', 'js/app.js'];
+  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/user-packs.js', 'js/app.js'];
   assert(JSON.stringify(own) === JSON.stringify(expected), `the app's own scripts are ${own.join(', ')}`);
 
   const untagged = shippedScripts.filter((from) => !scripts.includes(from));
@@ -637,7 +656,8 @@ check('app: every text colour is readable on both surfaces', () => {
   const pairs = [
     ['--ink', '--bg'], ['--ink', '--panel'], ['--ink', '--panel-2'],
     ['--muted', '--panel'], ['--muted', '--panel-2'],
-    ['--amber-ink', '--panel'], ['--green', '--panel'], ['--danger', '--panel']
+    ['--amber-ink', '--panel'], ['--amber-ink', '--panel-2'],
+    ['--green', '--panel'], ['--danger', '--panel']
   ];
   const notes = [];
   ['dark', 'light'].forEach((theme) => {
@@ -966,6 +986,8 @@ function addOnHost(packed) {
   assert(existsSync(addOnPath), 'js/user-packs.js is missing, so nothing adds a pack at runtime');
   const box = freshContext();
   runScript(box, path.join(v1, 'js', 'engine.js'));
+  runScript(box, path.join(v1, 'js', 'prover.js'));
+  assert(box.LoopworksProver, 'js/prover.js did not define the LoopworksProver global');
   shippedPacks.forEach((name) => runScript(box, path.join(v1, 'js', 'packs', name)));
   runScript(box, addOnPath);
   assert(box.LoopworksUserPacks, 'js/user-packs.js did not define the LoopworksUserPacks global');
@@ -1117,6 +1139,137 @@ check('app: an added pack is stored as data the engine can still check', () => {
   const result = reload.U.load(reload.host);
   assert(result.ok && result.loaded.length === 1, `a pack read back from storage refused: ${result.errors.join('; ')}`);
   return `${raw.length} characters round-trip`;
+});
+
+// WHY: one board family, three verdicts. It takes two lines to win - a turn and a walk - so the same
+//      rows show a Budget too small, a proof that walks into a wall, and a proof that is the truth.
+function twistLevel(overrides) {
+  return addedLevel(Object.assign({
+    id: 'twist-1',
+    rows: ['#####', '#.#.#', '#...#', '#.#.#', '#####'],
+    start: { x: 1, y: 1, dir: 'E' },
+    pads: [[1, 3]],
+    budget: 3
+  }, overrides || {}));
+}
+function twistPack(overrides) {
+  return addedPack({ levels: [twistLevel(overrides)] });
+}
+function sealedAdded() {
+  return addedPack({
+    levels: [addedLevel({
+      id: 'sealed-1',
+      rows: ['#######', '#.....#', '#.###.#', '#.#.#.#', '#.###.#', '#######'],
+      start: { x: 1, y: 1, dir: 'E' },
+      pads: [[3, 3]],
+      budget: 6
+    })]
+  });
+}
+
+// WHY: the promise this whole pack exists for - an added level is answered, not assumed. The two halves
+//      are the two halves of the wait: the page load must not search, because a player opens this app on a
+//      phone; the press of "Add it" must search, because a level from somewhere else is a claim about a
+//      board nobody has proved.
+check('app: the added level\'s proof is checked', () => {
+  const g = addOnHost();
+  const plain = g.U.validate([addedPack()], g.shelfIds());
+  assert(plain.ok, `a good pack was refused before any checking: ${plain.errors.join('; ')}`);
+  assert(plain.notes.length === 0, `a verdict arrived when nobody asked for one: ${plain.notes.join('; ')}`);
+  const proved = g.U.validate([addedPack()], g.shelfIds(), { prove: true });
+  assert(proved.ok, `the proven pack was refused: ${proved.errors.join('; ')}`);
+  assert(proved.notes.length === 1, `expected one verdict line, got ${proved.notes.length}`);
+  assert(/proven - 1 lines inside a Budget of 3/.test(proved.notes[0]), `the verdict reads "${proved.notes[0]}"`);
+  assert(!/forward/.test(proved.notes.join(' ')), `the verdict printed the program: ${proved.notes[0]}`);
+  const stored = addOnHost(JSON.stringify([addedPack()]));
+  const boot = stored.U.load(stored.host);
+  assert(boot.ok, `a stored pack that had been checked would not boot: ${boot.errors.join('; ')}`);
+  assert(boot.notes.length === 0, 'the page load searched the shelf again');
+  return proved.notes[0];
+});
+
+check('app: an unwinnable level is refused and the shelf does not change', () => {
+  const g = addOnHost();
+  const pack = sealedAdded();
+  const before = g.shelf().length;
+  const engineSays = g.box.Loopworks.validatePack(pack);
+  assert(engineSays.length === 0, `the engine itself refused the fixture, so this proves the wrong thing: ${engineSays.join('; ')}`);
+  const verdict = g.U.validate([pack], g.shelfIds(), { prove: true });
+  assert(!verdict.ok, 'a board walled shut was accepted');
+  assert(/"sealed-1"/.test(verdict.errors.join(' ')), `the refusal does not name the level: ${verdict.errors.join(' ')}`);
+  assert(/no program can reach this goal/.test(verdict.errors.join(' ')), `the refusal does not say why: ${verdict.errors.join(' ')}`);
+  assert(g.store.data[g.U.KEY] === undefined, 'checking a pack wrote to the store');
+  assert(g.shelf().length === before, `a refused pack reached the shelf: ${before} -> ${g.shelf().length}`);
+  return verdict.errors.join('; ');
+});
+
+// WHY: the other half of the honesty. A search that ran out of room says so and keeps the level, because
+//      "not proven" is a fact about this search and not a fact about the board - and the app must not
+//      throw away a playable level to sound certain.
+check('app: not proven still adds', () => {
+  const g = addOnHost();
+  const pack = twistPack({ budget: 1 });
+  const verdict = g.U.validate([pack], g.shelfIds(), { prove: true });
+  assert(verdict.ok, `a level nobody proved was refused: ${verdict.errors.join('; ')}`);
+  const said = verdict.notes.join(' ');
+  assert(/not proven/.test(said), `the note does not say not proven: ${said}`);
+  assert(/takes 2 lines/.test(said), `the note does not say what it found: ${said}`);
+  assert(!/no program can reach/.test(said), 'a level that can be won was called unwinnable');
+  const written = g.U.write([pack], g.host);
+  assert(written.ok, `the not-proven pack could not be stored: ${written.errors.join('; ')}`);
+  const again = addOnHost(g.store.data[g.U.KEY]);
+  const loaded = again.U.load(again.host);
+  assert(loaded.ok && loaded.loaded.length === 1, `the not-proven level would not open: ${loaded.errors.join('; ')}`);
+  const entry = again.shelf().find((item) => item.pack.id === 'sandbox');
+  assert(entry, 'the added pack never reached the fresh shelf');
+  const run = again.box.Loopworks.run(entry.pack, 'twist-1', 'turn right\nforward 2');
+  assert(run.status === 'solved', `the level that is not proven cannot be played: ${run.status} / ${run.reason}`);
+  assert(run.linesUsed > 1, `its own Budget of 1 should be too small for a 2-line win, got ${run.linesUsed}`);
+  return `${said} - and playable in ${run.linesUsed} lines`;
+});
+
+check('app: a proof that does not win refuses the level', () => {
+  const g = addOnHost();
+  const lying = twistPack({ proof: 'forward 2' });
+  const verdict = g.U.validate([lying], g.shelfIds(), { prove: true });
+  assert(!verdict.ok, `a level whose proof walks into a wall was accepted: ${verdict.notes.join('; ')}`);
+  assert(/cannot be added/.test(verdict.errors.join(' ')), `the refusal does not read as one: ${verdict.errors.join(' ')}`);
+  assert(/bump/.test(verdict.errors.join(' ')), `the engine's own reason is missing: ${verdict.errors.join(' ')}`);
+  const honest = twistPack({ proof: 'turn right\nforward 2' });
+  const kept = g.U.validate([honest], g.shelfIds(), { prove: true });
+  assert(kept.ok, `a level carrying a true proof was refused: ${kept.errors.join('; ')}`);
+  assert(/proven - 2 lines inside a Budget of 3/.test(kept.notes.join(' ')), `the carried proof reads "${kept.notes.join(' ')}"`);
+  return verdict.errors.join('; ');
+});
+
+// WHY: the four words are the whole contract, so a fifth is a bug the player would read as a promise.
+check('app: the checker answers in the four words this pack promised', () => {
+  const g = addOnHost();
+  const fixtures = [
+    addedPack(),
+    sealedAdded(),
+    twistPack({ budget: 1 }),
+    twistPack({ proof: 'forward 2' }),
+    twistPack({ proof: 'turn right\nforward 2' })
+  ];
+  const seen = new Set();
+  fixtures.forEach((pack) => {
+    const verdict = g.U.validate([pack], g.shelfIds(), { prove: true });
+    verdict.errors.concat(verdict.notes).forEach((line) => {
+      // WHY: "not proven" is checked first, because it contains the other word and a set built from a
+      //      test that matches both would report four verdicts where three were said.
+      const word = /not proven/.test(line) ? 'not proven'
+        : /proven - /.test(line) ? 'proven'
+          : /no program can reach this goal/.test(line) ? 'unwinnable'
+            : /cannot be added/.test(line) ? 'proof fails' : `unknown: ${line}`;
+      seen.add(word);
+      assert(!/^unknown/.test(word), `a verdict line this pack does not know: ${line}`);
+    });
+  });
+  ['proven', 'not proven', 'unwinnable', 'proof fails'].forEach((word) => {
+    assert(seen.has(word), `the word "${word}" was never answered by any of the four fixtures`);
+  });
+  return [...seen].sort().join(', ');
 });
 
 // WHY: a failure has to say which promise broke, so the report names the check and the reason.
