@@ -81,6 +81,154 @@
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[3, 1], [4, 3], [2, 4], [1, 2]],
         crates: []
+      },
+      {
+        id: 'depot-4',
+        title: 'Ask The Wall',
+        teaches: 'guard',
+        // WHY: this ring is four cells wide and three tall, so its sides are three moves and two
+        //      moves, alternating. A uniform loop cannot cross it at any step count: 1 bumps the
+        //      centre wall at (2,2), 2 bumps at (3,2), 3 bumps at (4,4). Written with turns the route
+        //      is seven lines, folded into repeat 2 it is six, and the budget is five - so the only
+        //      shape that fits asks the floor instead of counting it.
+        budget: 5,
+        goal: { kind: 'visit', count: 4 },
+        goalSentence: 'Drive over all four marked pads.',
+        teachesSentence: 'if wall ahead: turn right asks what is in front of the drone, so the same two lines work down every side of an uneven ring.',
+        rows: [
+          '######',
+          '#....#',
+          '#.##.#',
+          '#....#',
+          '######'
+        ],
+        start: { x: 1, y: 1, dir: 'E' },
+        pads: [[2, 1], [4, 2], [3, 3], [1, 2]],
+        crates: []
+      },
+      {
+        id: 'depot-5',
+        title: 'The Long Aisle',
+        teaches: 'a number after forward',
+        // WHY: the aisle is seven cells and the drop leg five, so the walk is ten cells and it
+        //      touches four pads on the way. Written one cell at a time that is eleven lines; with
+        //      two arguments and one turn it is three, and the budget is three. This is the first
+        //      level where the number after forward has to be big, so counting on your fingers is
+        //      the lesson rather than a shortcut around it.
+        budget: 3,
+        goal: { kind: 'visit', count: 4 },
+        goalSentence: 'Drive over all four marked pads.',
+        teachesSentence: 'forward 6 walks six cells in one line, so a long aisle costs one line and not six.',
+        rows: [
+          '#########',
+          '#.......#',
+          '#######.#',
+          '#######.#',
+          '#######.#',
+          '#######.#',
+          '#########'
+        ],
+        start: { x: 1, y: 1, dir: 'E' },
+        pads: [[3, 1], [7, 1], [7, 3], [7, 5]],
+        crates: []
+      },
+      {
+        id: 'depot-6',
+        title: 'The Assembly Line',
+        teaches: 'a loop that carries',
+        // WHY: three stations, each two cells down the aisle, each a crate above its pad. The body
+        //      of eight lines does one station, so repeat 3 fills all three in ten lines; written
+        //      out the same job costs twenty-one. depot-2 taught grab and drop, depot-3 taught
+        //      repeat - this is the first level that puts them in the same block.
+        budget: 10,
+        goal: { kind: 'fill', count: 3 },
+        goalSentence: 'Leave a crate on all three marked pads.',
+        teachesSentence: 'A loop can carry as well as walk: the same eight lines pick up and set down three times.',
+        rows: [
+          '#########',
+          '##.#.#.##',
+          '#.......#',
+          '###.#.#.#',
+          '#########'
+        ],
+        start: { x: 1, y: 2, dir: 'E' },
+        pads: [[3, 3], [5, 3], [7, 3]],
+        crates: [[2, 1], [4, 1], [6, 1]]
+      },
+      {
+        id: 'depot-7',
+        title: 'Every Shelf',
+        teaches: 'a loop that returns to where it started',
+        // WHY: four dead-end shelves, three cells deep, standing two cells apart. One body climbs
+        //      a shelf, turns around, climbs back and steps to the next shelf - seven lines inside
+        //      repeat 4, nine in all. Written out the four climbs cost twenty-three. The turn that
+        //      faces the drone back down the aisle is the one a player has to find himself, which
+        //      is why the budget is nine and not eight.
+        budget: 9,
+        goal: { kind: 'visit', count: 4 },
+        goalSentence: 'Drive into all four shelf ends.',
+        teachesSentence: 'A loop that ends where it began can be repeated: turn around inside it, not outside.',
+        rows: [
+          '############',
+          '############',
+          '##.#.#.#.###',
+          '##.#.#.#.###',
+          '##.#.#.#.###',
+          '#..........#',
+          '############'
+        ],
+        start: { x: 2, y: 5, dir: 'E' },
+        pads: [[2, 2], [4, 2], [6, 2], [8, 2]],
+        crates: []
+      },
+      {
+        id: 'depot-8',
+        title: 'Four Doors',
+        teaches: 'two sensors in one loop',
+        // WHY: four doors off one standing place, two of them crates and two of them pads. The
+        //      drone never walks: it turns, asks, and the guards do the rest. A program that names
+        //      the doors instead of asking them costs seven lines and only works from one facing,
+        //      and the budget is five - so the two questions in the block are what make one loop
+        //      serve all four doors.
+        budget: 5,
+        goal: { kind: 'fill', count: 2 },
+        goalSentence: 'Leave a crate on both marked pads.',
+        teachesSentence: 'Ask twice in one loop - if crate ahead: grab, if pad ahead: drop - and let the turn bring the next door.',
+        rows: [
+          '#####',
+          '##.##',
+          '#...#',
+          '##.##',
+          '#####'
+        ],
+        start: { x: 2, y: 2, dir: 'N' },
+        pads: [[3, 2], [1, 2]],
+        crates: [[2, 1], [2, 3]]
+      },
+      {
+        id: 'depot-9',
+        title: 'Round The Yard',
+        teaches: 'asking instead of counting',
+        // WHY: the yard is seven cells wide and four tall, so its sides are six and three. No
+        //      uniform loop crosses it at any step count - 1, 2, 3 and 5 each bump a side wall -
+        //      and the legs written out folded into repeat 2 cost six lines against a budget of
+        //      five. The only shape that fits asks the floor: turn when the wall is in front, walk
+        //      when it is not, and the uneven ring is walked by four lines.
+        budget: 5,
+        goal: { kind: 'visit', count: 4 },
+        goalSentence: 'Drive over all four marked pads.',
+        teachesSentence: 'A guard loop does not need to know how long each side is, so one loop fits an uneven ring.',
+        rows: [
+          '########',
+          '#......#',
+          '#.####.#',
+          '#.####.#',
+          '#......#',
+          '########'
+        ],
+        start: { x: 1, y: 1, dir: 'E' },
+        pads: [[4, 1], [6, 3], [3, 4], [1, 2]],
+        crates: []
       }
     ]
   };
