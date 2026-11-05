@@ -19,13 +19,24 @@ const v1 = path.join(appRoot, 'v1');
 const source = path.resolve(appRoot, '..', 'wireframe', 'loopworks');
 
 const results = [];
+const pending = [];
 // WHY: a check can only run where its inputs live. Returning `{ skip: reason }` records a check that
 //      had nothing to compare against, so a standalone clone reports it honestly instead of failing
 //      the gate that protects every other promise.
 function check(name, fn) {
   try {
     const detail = fn();
-    if (detail && typeof detail === 'object') {
+    if (detail && typeof detail.then === 'function') {
+      const slot = { name, ok: false, detail: 'never settled' };
+      results.push(slot);
+      pending.push(detail.then(
+        (value) => {
+          if (value && typeof value === 'object') { slot.skipped = true; slot.detail = value.skip; }
+          else { slot.ok = true; slot.detail = value || ''; }
+        },
+        (err) => { slot.ok = false; slot.detail = err.message; }
+      ));
+    } else if (detail && typeof detail === 'object') {
       results.push({ name, ok: true, skipped: true, detail: detail.skip });
     } else {
       results.push({ name, ok: true, detail: detail || '' });
@@ -311,7 +322,7 @@ check('app: the page loads the theme first, then the rules, every pack on disk, 
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
   const isPack = (src) => /^js\/packs\/[a-z0-9-]+\.js$/.test(src);
   const own = scripts.filter((src) => !isPack(src));
-  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/user-packs.js', 'js/app.js'];
+  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/app.js'];
   assert(JSON.stringify(own) === JSON.stringify(expected), `the app's own scripts are ${own.join(', ')}`);
 
   const untagged = shippedScripts.filter((from) => !scripts.includes(from));
@@ -657,7 +668,7 @@ check('app: every text colour is readable on both surfaces', () => {
     ['--ink', '--bg'], ['--ink', '--panel'], ['--ink', '--panel-2'],
     ['--muted', '--panel'], ['--muted', '--panel-2'],
     ['--amber-ink', '--panel'], ['--amber-ink', '--panel-2'],
-    ['--green', '--panel'], ['--danger', '--panel']
+    ['--green', '--panel'], ['--green', '--panel-2'], ['--danger', '--panel']
   ];
   const notes = [];
   ['dark', 'light'].forEach((theme) => {
@@ -1272,7 +1283,256 @@ check('app: the checker answers in the four words this pack promised', () => {
   return [...seen].sort().join(', ');
 });
 
-// WHY: a failure has to say which promise broke, so the report names the check and the reason.
+// ---------------------------------------------------------- the prompt a player copies
+
+// WHY: the prompt is a request written into a chat model, so its words are the contract. Every one of these
+//      checks reads the assembled text against something the running app already knows - the glossary, the
+//      engine's own refusals, the importer's caps - because a prompt typed out by hand is a second copy of
+//      the rules, and second copies are what this project keeps removing.
+const promptPath = path.join(v1, 'js', 'level-prompt.js');
+
+function promptHost(packed) {
+  assert(existsSync(promptPath), 'js/level-prompt.js is missing, so nothing builds the prompt a player copies');
+  const g = addOnHost(packed);
+  runScript(g.box, path.join(v1, 'js', 'words.js'));
+  runScript(g.box, promptPath);
+  assert(g.box.LoopworksLevelPrompt, 'js/level-prompt.js did not define the LoopworksLevelPrompt global');
+  const shelf = g.box.Loopworks.packs();
+  assert(shelf.length > 0, 'the shelf is empty, so the prompt has no real level to show');
+  return { box: g.box, L: g.box.LoopworksLevelPrompt, U: g.U, W: g.box.LoopworksWords,
+    pack: shelf[0].pack, level: shelf[0].pack.levels[0] };
+}
+
+// WHY: a pack that unlocks three verbs and one sensor. The point of handing it to the prompt is the words
+//      that are NOT there - a model that writes a carrying puzzle for a player who cannot carry has written
+//      a level this app will refuse.
+function subsetPack() {
+  return {
+    id: 'quay', name: 'The Quay', subject: 'programming logic', blurb: 'Three words and a wall.',
+    verbs: ['forward', 'turn left', 'turn right'], sensors: ['wall ahead'], rules: {},
+    levels: [{
+      id: 'quay-1', title: 'Round The Corner', teaches: 'sequence', budget: 4,
+      goal: { kind: 'visit', count: 1 }, goalSentence: 'Walk onto the pad.',
+      rows: ['#####', '#...#', '#####'], start: { x: 1, y: 1, dir: 'E' }, pads: [[3, 1]], crates: []
+    }]
+  };
+}
+
+check('app: the prompt names every word the Dictionary names, and no word it does not', () => {
+  const g = promptHost();
+  const lines = g.L.words(g.box, g.pack);
+  const labels = g.W.list(g.pack);
+  assert(labels.length > 0, `the glossary lists no words for pack "${g.pack.id}", so the prompt would be silent`);
+  labels.forEach((word) => {
+    const joined = lines.join('\n');
+    assert(joined.includes(word), `the prompt never names "${word}"`);
+    const said = g.W.describe(word);
+    assert(said !== '', `"${word}" has no description, so the prompt would offer a bare word`);
+    assert(joined.includes(said), `the prompt names "${word}" without the rule the Dictionary states for it`);
+  });
+  const subset = g.L.words(g.box, subsetPack());
+  const joinedSubset = subset.join('\n');
+  ['grab', 'drop', 'clear ahead', 'crate ahead', 'pad ahead'].forEach((word) => {
+    assert(!joinedSubset.includes(word), `the prompt offered "${word}" to a pack that does not unlock it`);
+  });
+  assert(joinedSubset.includes('forward'), 'a pack that unlocks forward got a prompt with no forward');
+  return `${labels.length} words in the prompt, ${subset.length} for a three-word pack`;
+});
+
+check('app: the prompt states the board alphabet in the engine\'s own sentence', () => {
+  const g = promptHost();
+  const broken = JSON.parse(JSON.stringify(g.level));
+  broken.rows[0] = `${broken.rows[0]}x`;
+  const pack = JSON.parse(JSON.stringify(g.pack));
+  pack.levels = [broken];
+  const errors = g.box.Loopworks.validatePack(pack);
+  const sentence = errors.find((message) => /character that is not/.test(message));
+  assert(sentence, `the engine stopped refusing an unknown character: ${JSON.stringify(errors)}`);
+  const said = g.L.grammar(g.box, g.pack).join('\n');
+  assert(said.includes(sentence), `the prompt does not carry the engine's own words:\n  engine: ${sentence}\n  prompt: ${said}`);
+  return sentence;
+});
+
+check('app: the prompt states the goal kinds in the engine\'s own sentence', () => {
+  const g = promptHost();
+  const pack = JSON.parse(JSON.stringify(g.pack));
+  pack.levels = [Object.assign({}, g.level, { goal: { kind: 'deliver', count: 1 } })];
+  const errors = g.box.Loopworks.validatePack(pack);
+  const sentence = errors.find((message) => /goal kind/.test(message));
+  assert(sentence, `the engine stopped refusing an unknown goal kind: ${JSON.stringify(errors)}`);
+  assert(/visit/.test(sentence) && /fill/.test(sentence), `the refusal names neither kind: ${sentence}`);
+  const said = g.L.grammar(g.box, g.pack).join('\n');
+  assert(said.includes(sentence), `the prompt does not carry the engine's own words:\n  engine: ${sentence}\n  prompt: ${said}`);
+  return sentence;
+});
+
+check('app: the prompt warns that crates need the carrying words, in the engine\'s own sentence', () => {
+  const g = promptHost();
+  const pack = JSON.parse(JSON.stringify(g.pack));
+  pack.verbs = ['forward', 'turn left', 'turn right'];
+  const level = Object.assign({}, g.level, { crates: g.level.pads ? [[g.level.start.x + 1, g.level.start.y]] : [[1, 1]] });
+  pack.levels = [level];
+  const errors = g.box.Loopworks.validatePack(pack);
+  const sentence = errors.find((message) => /places crates but the pack does not unlock/.test(message));
+  assert(sentence, `the engine stopped refusing crates without the words: ${JSON.stringify(errors)}`);
+  const said = g.L.grammar(g.box, g.pack).join('\n');
+  assert(said.includes(sentence), `the prompt does not carry the engine's own words:\n  engine: ${sentence}\n  prompt: ${said}`);
+  return sentence;
+});
+
+check('app: the prompt asks for a pack and stays inside the limits the importer enforces', () => {
+  const g = promptHost();
+  const text = g.L.text(g.box);
+  assert(g.L.LEVEL_MAX <= g.U.MAX_LEVELS, `the prompt asks for ${g.L.LEVEL_MAX} levels and the importer refuses above ${g.U.MAX_LEVELS}`);
+  assert(text.includes(`${g.L.LEVEL_MIN} to ${g.L.LEVEL_MAX}`), `the ask is not the numbers the module holds (${g.L.LEVEL_MIN}/${g.L.LEVEL_MAX})`);
+  assert(text.includes(String(g.U.MAX_CELLS)), `the prompt never names the ${g.U.MAX_CELLS}-cell board limit the importer enforces`);
+  assert(!text.includes('one level and nothing else'), 'the prompt asks for a single level, which the learner refused');
+  return `asks ${g.L.LEVEL_MIN} to ${g.L.LEVEL_MAX} levels under a ${g.U.MAX_CELLS}-cell and ${g.U.MAX_LEVELS}-level ceiling`;
+});
+
+check('app: the prompt carries the shape of a real level, not a described one', () => {
+  const g = promptHost();
+  const shown = g.L.exampleJson(g.box);
+  const text = g.L.text(g.box);
+  assert(text.includes(shown), 'the assembled prompt does not contain the example it claims to carry');
+  const pack = JSON.parse(shown);
+  assert(Array.isArray(pack.levels) && pack.levels.length > 0, `the example is not a pack with levels: ${shown.slice(0, 80)}`);
+  const errors = g.box.Loopworks.validatePack(pack);
+  assert(errors.length === 0, `the example the player is told to copy is refused by the engine: ${JSON.stringify(errors)}`);
+  const keys = Object.keys(pack.levels[0]).join(',');
+  assert(text.includes(Object.keys(g.level).join(', ')) || text.includes(keys),
+    'the prompt never names the fields the example level actually carries');
+  return `${pack.id}/${pack.levels[0].id} as the shape, ${Object.keys(pack.levels[0]).length} fields named`;
+});
+
+check('app: the copied prompt carries no learner record and no pack the player added', () => {
+  const stored = JSON.stringify([{
+    id: 'courtyard', name: 'The Courtyard', subject: 'programming logic',
+    verbs: ['forward'], sensors: [], rules: {},
+    levels: [{ id: 'courtyard-1', title: 'Yard', teaches: 'sequence', budget: 2,
+      goal: { kind: 'visit', count: 1 }, rows: ['###', '#.#', '###'], start: { x: 1, y: 1, dir: 'E' },
+      pads: [[1, 1]], crates: [] }]
+  }]);
+  const g = promptHost(stored);
+  const text = g.L.text(g.box);
+  assert(!/loopworks\.app\./.test(text), 'the prompt names a storage key, so it carries the machine record out');
+  ['courtyard', 'courtyard-1', 'The Courtyard'].forEach((name) => {
+    assert(!text.includes(name), `the prompt carries "${name}", which only exists because this player added it`);
+  });
+  return `${text.length} characters, no key and no added pack in it`;
+});
+
+check('app: the prompt module is assembled from the shelf, so its file names no subject', () => {
+  const text = read(promptPath).toLowerCase();
+  const names = new Set();
+  shelf().forEach((pack) => {
+    [pack.id, pack.name].forEach((value) => { if (value) names.add(String(value).toLowerCase()); });
+  });
+  const named = [...names].filter((word) => text.includes(word));
+  assert(named.length === 0, `js/level-prompt.js names ${named.join(', ')}`);
+  assert(/loopworks-level-prompt/.test(text), 'js/level-prompt.js carries no PACK line, so its copy has no origin');
+  return `${names.size} subject words from ${shelf().length} packs, none in the prompt module`;
+});
+
+// WHY: everything above is pure text. These three drive the dialog itself, which until this pack had never
+//      been exercised outside a browser - the click, the clipboard's two answers, and the file picker.
+function dialogHost(seed) {
+  assert(existsSync(promptPath), 'js/level-prompt.js is missing, so nothing builds the prompt a player copies');
+  const box = freshContext();
+  runScript(box, path.join(v1, 'js', 'engine.js'));
+  runScript(box, path.join(v1, 'js', 'prover.js'));
+  shippedPacks.forEach((name) => runScript(box, path.join(v1, 'js', 'packs', name)));
+  runScript(box, path.join(v1, 'js', 'words.js'));
+  runScript(box, promptPath);
+
+  const nodes = (name) => ({
+    name, value: '', textContent: '', className: '', hidden: true, type: '', dataset: {},
+    files: [], handlers: {},
+    addEventListener(type, fn) { this.handlers[type] = fn; },
+    setAttribute() {}, close() {}, focus() { this.focused = true; }, select() { this.selected = true; },
+    appendChild(child) { (this.children = this.children || []).push(child); return child; },
+    closest() { return null; }
+  });
+  const made = {};
+  const timers = [];
+  const reloads = { count: 0 };
+  const readers = { built: 0 };
+  box.document = {
+    getElementById(name) { made[name] = made[name] || nodes(name); return made[name]; },
+    createElement: (name) => nodes(name)
+  };
+  box.FileReader = class {
+    constructor() { readers.built += 1; this.result = ''; this.onload = null; this.onerror = null; }
+    readAsText(file) { this.result = file.text; if (this.onload) this.onload(); }
+  };
+  box.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return timers.length; };
+  box.location = { reload: () => { reloads.count += 1; } };
+  const store = storeStub(seed);
+  box.localStorage = store;
+  box.navigator = {};
+  runScript(box, path.join(v1, 'js', 'user-packs.js'));
+  assert(box.LoopworksUserPacks, 'js/user-packs.js did not define the LoopworksUserPacks global');
+  const turn = () => new Promise((resolve) => setImmediate(() => timers.forEach((t) => t.fn())));
+  return { box, made, timers, reloads, readers, store, turn };
+}
+
+check('app: a clipboard that will not take it puts the prompt in the box and says so', async () => {
+  const g = dialogHost();
+  const copy = g.made['pack-prompt-copy'];
+  assert(copy && copy.handlers.click, 'the dialog never wired #pack-prompt-copy, so the button does nothing');
+  await copy.handlers.click();
+  const expected = g.box.LoopworksLevelPrompt.text(g.box);
+  assert(g.made['pack-add-error'].className.includes('note'),
+    `the fallback line is not in the note tone: "${g.made['pack-add-error'].className}"`);
+  assert(g.made['pack-add-text'].value === expected, 'the box did not end up holding the prompt the button was asked to copy');
+  assert(g.made['pack-add-text'].selected === true, 'the text was put in the box but never selected for a long-press copy');
+  assert(/clipboard/.test(g.made['pack-add-error'].textContent),
+    `the line does not say the clipboard refused: "${g.made['pack-add-error'].textContent}"`);
+  return `fallback paints the amber line and fills the box with ${expected.length} characters`;
+});
+
+check('app: a clipboard that takes it says copied and leaves the paste box alone', async () => {
+  const g = dialogHost();
+  const written = [];
+  g.box.navigator.clipboard = { writeText: (text) => { written.push(text); return Promise.resolve(); } };
+  await g.made['pack-prompt-copy'].handlers.click();
+  assert(written.length === 1, `the clipboard was asked to write ${written.length} times`);
+  assert(written[0] === g.box.LoopworksLevelPrompt.text(g.box), 'what the clipboard got is not the prompt the module builds');
+  assert(g.made['pack-add-text'].value === '', 'a copy that worked still rewrote the paste box, wiping what the player had there');
+  assert(g.made['pack-add-error'].className.includes('said'),
+    `a successful copy is not in the green tone: "${g.made['pack-add-error'].className}"`);
+  assert(/copied/.test(g.made['pack-add-error'].textContent), 'the line does not say copied when the clipboard took it');
+  return 'clipboard first, one write, green line, box untouched';
+});
+
+check('app: a picked .json file lands in the box as the player wrote it', async () => {
+  const g = dialogHost();
+  const pack = JSON.stringify(subsetPack());
+  g.made['pack-add-file'].files = [{ name: 'quay.json', text: pack }];
+  await g.made['pack-add-file'].handlers.change();
+  assert(g.made['pack-add-text'].value === pack, 'the picked file did not reach the paste box');
+  assert(/quay\.json/.test(g.made['pack-add-error'].textContent),
+    `the line never names the file it read: "${g.made['pack-add-error'].textContent}"`);
+  const parsed = g.box.LoopworksUserPacks.parse(g.made['pack-add-text'].value);
+  assert(parsed.packs && parsed.packs.length === 1, `the box text no longer parses as a pack: ${JSON.stringify(parsed.errors)}`);
+  return `read quay.json into the box and named it - ${pack.length} characters`;
+});
+
+check('app: a picked file that is not .json is refused before it is read', async () => {
+  const g = dialogHost();
+  g.made['pack-add-file'].files = [{ name: 'quay.js', text: '{"id": "quay"}' }];
+  const before = g.readers.built;
+  await g.made['pack-add-file'].handlers.change();
+  assert(g.readers.built === before, `a script file was opened by a reader anyway (${g.readers.built - before} new)`);
+  assert(g.made['pack-add-text'].value === '', 'the box was overwritten with a file this app refuses to read');
+  assert(/\.json/.test(g.made['pack-add-error'].textContent),
+    `the refusal does not name the shape to pick: "${g.made['pack-add-error'].textContent}"`);
+  return 'quay.js refused by name, the reader never built';
+});
+
+// WHY: a failure has to say which promise broke, so the report names the check and the reason. The dialog
+//      checks settle on a later turn, so the report waits for every one of them before it reads the slate.
+await Promise.all(pending);
 const failed = results.filter((result) => !result.ok);
 const skipped = results.filter((result) => result.skipped);
 const runnable = results.length - skipped.length;

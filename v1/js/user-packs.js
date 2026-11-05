@@ -229,6 +229,7 @@
     text: id('pack-add-text'),
     file: id('pack-add-file'),
     save: id('pack-add-save'),
+    prompt: id('pack-prompt-copy'),
     error: id('pack-add-error'),
     list: id('pack-add-list')
   };
@@ -328,16 +329,49 @@
     host.setTimeout(() => host.location.reload(), ANSWER_BEAT);
   }
 
+  // WHY: a clipboard is not a promise. In a browser that will not hand one out - no permission, a plain
+  //      http page, an old phone - the ask is useless if the button just fails. So the copy has two arms:
+  //      the clipboard takes it, say so and leave the paste box the player was using untouched; it refuses,
+  //      the same text lands in the box and is selected for a long-press. Neither arm says the other's
+  //      word, because "copied" over a box the player still has to copy from is a lie about what happened.
+  function copyPrompt() {
+    const prompt = host.LoopworksLevelPrompt ? host.LoopworksLevelPrompt.text(host) : '';
+    const nav = host.navigator;
+    const intoBox = () => {
+      el.text.value = prompt;
+      if (el.text.focus) el.text.focus();
+      if (el.text.select) el.text.select();
+      showProblems(['this browser will not hand the prompt to the clipboard, so it is in the box. Select it and copy it.'], 'note');
+    };
+    if (nav && nav.clipboard && nav.clipboard.writeText) {
+      return nav.clipboard.writeText(prompt).then(
+        () => showProblems(['copied. Paste it into any chat model and ask for the pack back.'], 'said'),
+        intoBox
+      );
+    }
+    intoBox();
+    return undefined;
+  }
+
   el.open.addEventListener('click', open);
   el.close.addEventListener('click', () => el.modal.close());
   el.save.addEventListener('click', addIt);
+  el.prompt.addEventListener('click', copyPrompt);
+  // WHY: a file arrives with a name someone else chose, and this box is read as JSON by the same button as
+  //      the paste. A .js picked by mistake would be read into the box and then run its way toward "Add it",
+  //      so the name is checked before a reader is built: only .json is opened, and the line says which file
+  //      came in so the player knows what the box now holds.
   el.file.addEventListener('change', () => {
     const picked = el.file.files && el.file.files[0];
     if (!picked) return;
+    if (!/\.json$/i.test(picked.name || '')) {
+      showProblems([`"${picked.name || 'that file'}" is not a .json file. Pick the level pack the model saved.`], 'error');
+      return;
+    }
     const reader = new host.FileReader();
     reader.onload = () => {
       el.text.value = String(reader.result);
-      showProblems([]);
+      showProblems([`read ${picked.name} into the box - press Add it to check and play it.`], 'note');
     };
     reader.onerror = () => showProblems(['that file could not be read.']);
     reader.readAsText(picked);

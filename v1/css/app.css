@@ -1003,9 +1003,25 @@ body.is-dragging { cursor: row-resize; user-select: none; }
    the same room, and it is the native one that knows how to open a file on this machine. */
 .pack-add-file { flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: var(--muted); }
 
-.pack-add-save {
+/* WHY: the copy is a request to a model, not a change to this machine, so it sits quieter than "Add it" -
+   an outline rather than a filled block - and the primary button keeps its weight. Both share the foot. */
+.pack-add-prompt {
   flex: none;
   margin-left: auto;
+  padding: 9px 16px;
+  border: 1px solid var(--edge-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  font: 11px var(--mono);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pack-add-save {
+  flex: none;
+  margin-left: 0;
   padding: 9px 16px;
   border: 1px solid var(--signal);
   border-radius: 2px;
@@ -1034,6 +1050,7 @@ body.is-dragging { cursor: row-resize; user-select: none; }
    grey - so a level that proved nothing is never painted as a level that failed. */
 .pack-add-error.checking { border-left-color: var(--edge-strong); color: var(--muted); }
 .pack-add-error.note { border-left-color: var(--amber-ink); color: var(--amber-ink); }
+.pack-add-error.said { border-left-color: var(--green); color: var(--green); }
 
 .pack-add-saved { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px dashed var(--edge-strong); }
 
@@ -1253,8 +1270,9 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
   .pack-add-foot { gap: 8px; }
 
-  /* WHY: the browser's own file picker is as wide as its button and caption, so the add control takes
-     the next line rather than squeezing the picker off the screen at 320 px. */
+  /* WHY: the browser's own file picker is as wide as its button and caption, so the copy and the add
+     control each take their own line rather than squeezing the picker off the screen at 320 px. */
+  .pack-add-prompt,
   .pack-add-save { margin-left: 0; width: 100%; }
 
   .statusbar { gap: 10px; }
