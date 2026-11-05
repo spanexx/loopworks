@@ -929,6 +929,138 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
 .evidence-row svg { width: 14px; height: 14px; color: var(--faint); }
 
+/* ---------------------------------------------------------------- the door to the shelf */
+
+/* WHY: the Evidence view is the view that talks about the levels on this machine, so the control that
+   adds one belongs to its head and not to the bar or the drawer, both of which are locked rows. */
+.evidence-actions { display: flex; gap: 10px; margin: -10px 0 26px; }
+
+.add-level {
+  padding: 8px 14px;
+  border: 1px solid var(--btn-edge);
+  border-radius: 2px;
+  background: var(--btn);
+  color: var(--ink);
+  font: 11px var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.add-level:hover { border-color: var(--signal); color: var(--signal); }
+
+.pack-add-modal {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  border: 1px solid var(--edge-strong);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 24px 70px var(--shadow);
+}
+
+.pack-add-modal::backdrop { background: rgba(4, 7, 10, .62); }
+
+.pack-add-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: calc(100vh - 42px);
+  max-height: calc(100dvh - 42px);
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+}
+
+.pack-add-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+
+.pack-add-head h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+  font-weight: 600;
+}
+
+.pack-add-intro { margin: 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
+
+.pack-add-text {
+  min-height: 132px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge-strong);
+  border-radius: 2px;
+  background: var(--field);
+  color: var(--ink);
+  font: 13px/1.5 var(--mono);
+  resize: vertical;
+}
+
+.pack-add-text::placeholder { color: var(--faint); }
+
+.pack-add-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+/* WHY: the browser's own picker is the control. A label dressed as a button would be a second door to
+   the same room, and it is the native one that knows how to open a file on this machine. */
+.pack-add-file { flex: 1 1 auto; min-width: 0; font: 11px var(--mono); color: var(--muted); }
+
+.pack-add-save {
+  flex: none;
+  margin-left: auto;
+  padding: 9px 16px;
+  border: 1px solid var(--signal);
+  border-radius: 2px;
+  background: var(--signal);
+  color: var(--signal-ink);
+  font: 11px var(--mono);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pack-add-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 2px solid var(--danger);
+  background: var(--panel-2);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.pack-add-saved { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px dashed var(--edge-strong); }
+
+.pack-add-list { display: flex; flex-direction: column; }
+
+.pack-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.pack-add-name { min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+
+.pack-add-count { font: 10px var(--mono); color: var(--faint); white-space: nowrap; }
+
+.pack-add-remove {
+  padding: 5px 9px;
+  border: 1px solid var(--btn-edge);
+  border-radius: 2px;
+  background: var(--btn);
+  color: var(--muted);
+  font: 10px var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.pack-add-remove:hover { border-color: var(--danger); color: var(--danger); }
+
+.pack-add-empty { margin: 0; font: 11px var(--mono); color: var(--faint); }
+
 /* ---------------------------------------------------------------- the status bar */
 
 .statusbar {
@@ -1106,6 +1238,18 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   .gutter { font-size: 16px; line-height: 24px; }
 
   .words-inner { padding: 16px; }
+
+  .pack-add-inner { padding: 16px; }
+
+  /* WHY: the same rule the program follows. A control under 16 px makes iOS Safari zoom the whole page
+     when it takes focus, and this is the second box in the app a player types into. */
+  .pack-add-text { font-size: 16px; line-height: 24px; }
+
+  .pack-add-foot { gap: 8px; }
+
+  /* WHY: the browser's own file picker is as wide as its button and caption, so the add control takes
+     the next line rather than squeezing the picker off the screen at 320 px. */
+  .pack-add-save { margin-left: 0; width: 100%; }
 
   .statusbar { gap: 10px; }
   .statusbar .status-note { display: none; }

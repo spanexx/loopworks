@@ -64,13 +64,38 @@ function runScript(ctx, file) {
 }
 const ctx = freshContext();
 runScript(ctx, path.join(v1, 'js', 'engine.js'));
-runScript(ctx, path.join(v1, 'js', 'packs', 'depot.js'));
-runScript(ctx, path.join(v1, 'js', 'packs', 'night-shift.js'));
+// WHY: every script the app ships, found on disk instead of named in this file. Naming them made a new
+//      module an edit to the harness, which is the bookkeeping the authoring pack removed.
+function jsUnder(dir, base) {
+  return readdirSync(dir).sort().flatMap((name) => {
+    const full = path.join(dir, name);
+    if (statSync(full).isDirectory()) return jsUnder(full, `${base}${name}/`);
+    return name.endsWith('.js') ? [`${base}${name}`] : [];
+  });
+}
+const shippedScripts = jsUnder(path.join(v1, 'js'), 'js/');
+const shippedPacks = shippedScripts
+  .filter((from) => from.startsWith('js/packs/'))
+  .map((from) => from.split('/').pop());
+shippedPacks.forEach((name) => runScript(ctx, path.join(v1, 'js', 'packs', name)));
 runScript(ctx, path.join(v1, 'js', 'words.js'));
 const L = ctx.Loopworks;
 assert(L, 'the app engine did not define the Loopworks global');
 const W = ctx.LoopworksWords;
 assert(W, 'the words module did not define the LoopworksWords global');
+
+// WHY: the answer key lives in this tools folder as a copy of the authored one, so a bare clone of the
+//      app repository still runs its own checks. A missing copy reads as an empty table on purpose: the
+//      checks below then fail by level name instead of the harness dying on a file error.
+const answersPath = path.join(appRoot, 'tools', 'solutions.js');
+function readSolutions() {
+  if (!existsSync(answersPath)) return {};
+  const answers = freshContext();
+  runScript(answers, answersPath);
+  assert(answers.LoopworksSolutions, `${path.relative(appRoot, answersPath)} did not define LoopworksSolutions`);
+  return answers.LoopworksSolutions;
+}
+const SOLUTIONS = readSolutions();
 
 function shelf() {
   return L.packs().filter((entry) => entry.errors.length === 0).map((entry) => entry.pack);
@@ -85,31 +110,51 @@ function play(packId, levelId, program) {
 }
 
 // WHY: the app is a surface over the prototype's rules. A copy that has drifted is a second set of
-//      rules pretending to be the first, which is exactly what the layering rule forbids.
-check('app: the engine and both packs are byte-for-byte copies', () => {
+//      rules pretending to be the first, which is exactly what the layering rule forbids. The list of
+//      files to compare comes from the prototype folder, so a pack that was never copied is red here
+//      rather than simply absent from the shelf.
+check('app: the engine, every pack and the answer key are byte-for-byte copies', () => {
   if (!existsSync(source)) {
     return { skip: `the game workspace with ${path.relative(appRoot, source)} is not here` };
   }
+  const originals = readdirSync(path.join(source, 'packs'))
+    .filter((name) => name.endsWith('.js'))
+    .sort();
+  const copies = shippedPacks;
+  const neverCopied = originals.filter((name) => !copies.includes(name));
+  const noOriginal = copies.filter((name) => !originals.includes(name));
+  assert(neverCopied.length === 0, `${path.relative(appRoot, source)} has packs the app does not ship: ${neverCopied.join(', ')} - run npm run sync`);
+  assert(noOriginal.length === 0, `the app ships packs with no original in the prototype tree: ${noOriginal.join(', ')}`);
   const pairs = [
-    ['js/engine.js', path.join(source, 'engine.js')],
-    ['js/packs/depot.js', path.join(source, 'packs', 'depot.js')],
-    ['js/packs/night-shift.js', path.join(source, 'packs', 'night-shift.js')]
+    [path.join(v1, 'js', 'engine.js'), path.join(source, 'engine.js')],
+    [answersPath, path.join(source, 'solutions.js')],
+    ...originals.map((name) => [path.join(v1, 'js', 'packs', name), path.join(source, 'packs', name)])
   ];
-  for (const [local, original] of pairs) {
-    const a = readFileSync(path.join(v1, local));
-    const b = readFileSync(original);
-    assert(a.equals(b), `${local} no longer matches ${path.relative(appRoot, original)}`);
-  }
-  return 'three copies match';
+  pairs.forEach(([local, original]) => {
+    assert(existsSync(local), `${path.relative(appRoot, local)} is missing - run npm run sync from the game root`);
+    assert(readFileSync(local).equals(readFileSync(original)), `${path.relative(appRoot, local)} no longer matches ${path.relative(appRoot, original)}`);
+  });
+  return `${pairs.length} copies match`;
 });
 
-check('app: both packs validate and only two load', () => {
+// WHY: the rules a level count used to stand in for. A count only proved nobody had edited the data;
+//      these hold whatever the shelf grows into, and they are the same three rules the prototype
+//      harness applies, so neither copy of the app can drift from the other's promise.
+check('app: every pack on the shelf validates, holds a level, and matches the files that ship', () => {
   const entries = L.packs();
-  assert(entries.length === 2, `expected two packs, found ${entries.length}`);
-  entries.forEach((entry) => assert(entry.errors.length === 0, entry.errors.join('; ')));
-  assert(findPack('depot').levels.length === 3, 'the depot pack must keep three levels');
-  assert(findPack('night-shift').levels.length === 2, 'the night pack must keep two levels');
-  return entries.map((entry) => entry.pack.id).join(', ');
+  assert(entries.length > 0, 'the shelf holds no packs at all');
+  assert(entries.length === shippedPacks.length, `the shelf holds ${entries.length} packs but ${shippedPacks.length} pack files ship`);
+  entries.forEach((entry) => {
+    assert(entry.errors.length === 0, `${entry.pack.id} rejected: ${entry.errors.join('; ')}`);
+    assert(entry.pack.levels.length > 0, `${entry.pack.id} holds no levels at all`);
+  });
+  const ids = [];
+  entries.forEach((entry) => entry.pack.levels.forEach((level) => ids.push(level.id)));
+  const repeats = [...new Set(ids.filter((id, i) => ids.indexOf(id) !== i))];
+  assert(repeats.length === 0, `a level id appears in two packs: ${repeats.join(', ')}`);
+  const orphans = Object.keys(SOLUTIONS).filter((id) => !ids.includes(id));
+  assert(orphans.length === 0, `tools/solutions.js answers levels that are not on the shelf: ${orphans.join(', ')}`);
+  return entries.map((entry) => `${entry.pack.id}:${entry.pack.levels.length}`).join(' ');
 });
 
 check('app: the engine names no pack and carries no subject', () => {
@@ -122,22 +167,15 @@ check('app: the engine names no pack and carries no subject', () => {
   return 'engine stays subject-blind';
 });
 
-// WHY: these are the published solutions from the prototype. If one stops solving inside its
-//      budget, the app is offering a level that cannot be finished as taught.
-const SOLUTIONS = {
-  'depot-1': 'forward 2\nturn right\nforward 2',
-  'depot-2': 'turn left\ngrab\nturn right\nturn right\ndrop\nturn right\nforward 1\nturn left\ngrab\nturn right\nturn right\ndrop',
-  'depot-3': 'repeat 4\n  forward 3\n  turn right\nend',
-  'night-1': 'forward 4\nturn left\nturn left\nforward 8',
-  'night-2': 'repeat 4\n  forward 3\n  turn right\nend'
-};
-
+// WHY: the published solutions come from tools/solutions.js, read once at the top of this file. They
+//      used to be typed in here as a second copy of the prototype's table, and a table kept twice is a
+//      promise that can be broken in one place and still look true in the other.
 check('app: every published solution solves inside its budget', () => {
   const rows = [];
   for (const pack of shelf()) {
     for (const level of pack.levels) {
       const program = SOLUTIONS[level.id];
-      assert(program, `${level.id} has no published solution`);
+      assert(program, `${level.id} has no published solution in tools/solutions.js`);
       const run = play(pack.id, level.id, program);
       assert(run.status === 'solved', `${level.id}: ${run.status} / ${run.reason}`);
       assert(run.linesUsed <= level.budget, `${level.id}: ${run.linesUsed} lines over ${level.budget}`);
@@ -233,19 +271,9 @@ check('app: every offered word carries a description', () => {
 
 // ---------------------------------------------------------------- the shipped page
 
-const PAGE_FILES = [
-  'index.html',
-  'css/app.css',
-  'js/engine.js',
-  'js/packs/depot.js',
-  'js/packs/night-shift.js',
-  'js/theme.js',
-  'js/board.js',
-  'js/evidence.js',
-  'js/words.js',
-  'js/sound.js',
-  'js/app.js'
-];
+// WHY: the app's own page files. The scripts come off disk, so a module added to the folder is on this
+//      list without anyone editing the harness, and forgetting its file is red instead of invisible.
+const PAGE_FILES = ['index.html', 'css/app.css', ...shippedScripts];
 
 check('app: every shipped file exists', () => {
   PAGE_FILES.forEach((file) => {
@@ -255,20 +283,43 @@ check('app: every shipped file exists', () => {
   return `${PAGE_FILES.length} files`;
 });
 
-check('app: the page loads the theme first, then the rules, the packs and its own modules', () => {
+// WHY: file:// cannot list a folder, so the page has to name what it loads (GRILL decision 6). That
+//      makes one script tag per file the only bookkeeping left, and this check is what turns forgetting
+//      it red instead of shipping a shelf that quietly holds one level fewer. The order of the app's own
+//      modules cannot be read off disk, so that one list stays named.
+check('app: the page loads the theme first, then the rules, every pack on disk, then its own modules', () => {
   const page = read(path.join(v1, 'index.html'));
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
-  const expected = ['js/theme.js', 'js/engine.js', 'js/packs/depot.js', 'js/packs/night-shift.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/app.js'];
-  assert(JSON.stringify(scripts) === JSON.stringify(expected), `script order is ${scripts.join(', ')}`);
+  const isPack = (src) => /^js\/packs\/[a-z0-9-]+\.js$/.test(src);
+  const own = scripts.filter((src) => !isPack(src));
+  const expected = ['js/theme.js', 'js/engine.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/user-packs.js', 'js/app.js'];
+  assert(JSON.stringify(own) === JSON.stringify(expected), `the app's own scripts are ${own.join(', ')}`);
+
+  const untagged = shippedScripts.filter((from) => !scripts.includes(from));
+  const phantom = scripts.filter((src) => !shippedScripts.includes(src));
+  assert(untagged.length === 0, `nothing loads ${untagged.join(', ')} - a script file needs one <script> tag in index.html`);
+  assert(phantom.length === 0, `the page loads scripts that are not on disk: ${phantom.join(', ')}`);
+
+  const packsAt = scripts.reduce((list, src, i) => (isPack(src) ? [...list, i] : list), []);
+  assert(scripts[0] === 'js/theme.js', `the theme has to load first, found ${scripts[0]}`);
+  assert(scripts[1] === 'js/engine.js', `the engine has to load second, found ${scripts[1]}`);
+  assert(Math.min(...packsAt) > 1, 'a pack loads before the engine it registers with');
+  assert(Math.max(...packsAt) < scripts.indexOf('js/board.js'), 'the packs must all load before the app reads the shelf');
+  assert(scripts.indexOf('js/user-packs.js') < scripts.indexOf('js/app.js'), 'an added pack has to be registered before the controller reads the shelf');
+
   // WHY: the ramp has to be on the root before the sheet paints, or the first frame flashes the other theme.
   assert(page.indexOf('src="js/theme.js"') < page.indexOf('href="css/app.css"'), 'the theme script runs after the stylesheet');
   return scripts.join(' -> ');
 });
 
-check('app: every element the controller looks up is in the page', () => {
+// WHY: derived from every module the page loads, not just the controller, so a lookup written in a new
+//      file is caught by the same rule. A missing element is a silent no-op in the browser.
+check('app: every element the modules look up is in the page', () => {
   const page = read(path.join(v1, 'index.html'));
-  const app = read(path.join(v1, 'js', 'app.js'));
-  const ids = [...new Set([...app.matchAll(/\bid\('([a-z0-9-]+)'\)/g)].map((match) => match[1]))];
+  const ids = [...new Set(shippedScripts.flatMap((from) => {
+    const src = read(path.join(v1, from));
+    return [...src.matchAll(/\bid\('([a-z0-9-]+)'\)/g)].map((match) => match[1]);
+  }))];
   const missing = ids.filter((name) => !page.includes(`id="${name}"`));
   assert(missing.length === 0, `the page has no ${missing.join(', ')}`);
   return `${ids.length} elements found`;
@@ -308,9 +359,41 @@ check('app: nothing loads from another machine', () => {
       .replace(/url\((['"]?)data:[^)]*\)/g, 'url(data:)');
     assert(!/https?:\/\//i.test(text), `${path.relative(v1, file)} names a remote URL`);
     assert(!/\bfetch\s*\(/.test(text), `${path.relative(v1, file)} uses fetch`);
-    assert(!/\b(import|export)\b/.test(text), `${path.relative(v1, file)} uses a module keyword`);
+    const syntax = moduleSyntax(text);
+    assert(!syntax, `${path.relative(v1, file)} is a module (${syntax})`);
   });
   return `${v1Text.length} files stay local`;
+});
+
+// WHY: the promise is that the app opens without a server, so what is refused is module syntax. An
+//      unanchored "import" also fired on a comment naming a document - and it read the same either way,
+//      so the one form that actually breaks file://, a dynamic import() inside a function body, was only
+//      caught by luck. These three patterns are the forms, and the check below calibrates them.
+function moduleSyntax(src) {
+  const forms = [
+    ['a module declaration', /^\s*(?:import|export)\s/m],
+    ['a dynamic import', /\bimport\s*\(/],
+    ['import.meta', /\bimport\.meta\b/]
+  ];
+  const hit = forms.find(([, pattern]) => pattern.test(src));
+  return hit ? hit[0] : '';
+}
+
+const KEY_PATTERN = "['\"](loopworks\\.[a-z0-9.\\-]+)['\"]";
+function storageKeys(text) {
+  return [...text.matchAll(new RegExp(KEY_PATTERN, 'gi'))].map((match) => match[1]);
+}
+
+check('app: the two text guards read what they claim to read', () => {
+  assert(moduleSyntax("import 'x';") === 'a module declaration', 'a module import slipped past the guard');
+  assert(moduleSyntax('  export const a = 1;') === 'a module declaration', 'an indented export slipped past the guard');
+  assert(moduleSyntax("const m = await import('x');") === 'a dynamic import', 'a dynamic import slipped past the guard');
+  assert(moduleSyntax('const where = import.meta.url;') === 'import.meta', 'import.meta slipped past the guard');
+  assert(moduleSyntax('// built to PRD-TRD-loopworks-level-import.md') === '', 'the guard reads prose, not code');
+  assert(moduleSyntax('<span>an import of a level pack</span>') === '', 'the guard reads prose, not code');
+  const keys = storageKeys("const KEY = 'loopworks.app.user-packs.v1';");
+  assert(keys.length === 1 && keys[0] === 'loopworks.app.user-packs.v1', `the key guard missed a hyphenated key, read ${JSON.stringify(keys)}`);
+  return 'four module forms refused, two prose lines spared, a hyphenated key read';
 });
 
 check('app: no drive letter or absolute machine path is written down', () => {
@@ -329,17 +412,25 @@ check('app: the repository root redirects to v1', () => {
   return 'root -> v1/';
 });
 
-check('app: only the three documented storage keys are used', () => {
+// WHY: the keys are listed here on purpose, so a fifth one is a decision someone wrote down and not a
+//      stray line of code. Every one of them holds only player data on the player's own machine.
+check('app: only the documented storage keys are used', () => {
+  const documented = [
+    'loopworks.app.progress.v1',
+    'loopworks.app.sound.v1',
+    'loopworks.app.theme.v1',
+    'loopworks.app.user-packs.v1'
+  ].sort();
   const found = new Set();
   v1Text.forEach((file) => {
     // WHY: quoted only - `Loopworks.register` and `Loopworks.machine` are API names, not keys.
-    for (const match of read(file).matchAll(/['"](loopworks\.[a-z0-9.]+)['"]/gi)) found.add(match[1]);
+    for (const key of storageKeys(read(file))) found.add(key);
   });
   const keys = [...found].sort();
-  assert(keys.length === 3, `expected three keys, found ${keys.join(', ')}`);
-  assert(keys[0] === 'loopworks.app.progress.v1', `unexpected key ${keys[0]}`);
-  assert(keys[1] === 'loopworks.app.sound.v1', `unexpected key ${keys[1]}`);
-  assert(keys[2] === 'loopworks.app.theme.v1', `unexpected key ${keys[2]}`);
+  const stray = keys.filter((key) => !documented.includes(key));
+  const unwritten = documented.filter((key) => !keys.includes(key));
+  assert(stray.length === 0, `keys nobody documented: ${stray.join(', ')}`);
+  assert(unwritten.length === 0, `documented keys no file writes: ${unwritten.join(', ')}`);
   return keys.join(', ');
 });
 
@@ -850,6 +941,183 @@ function luminance(rgb) {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
+
+// ---------------------------------------------------------- packs the player adds on this machine
+
+// WHY: a browser cannot list a folder and this app must never run a stranger's script, so a level
+//      arrives as data and lives in the machine's own storage. These checks hand the module a host with
+//      a storage stub, which is the same shape a browser gives it, and every one of them names the
+//      refusal it expects instead of trusting a silent pass.
+const addOnPath = path.join(v1, 'js', 'user-packs.js');
+
+function storeStub(seed) {
+  const data = Object.assign({}, seed);
+  return {
+    data,
+    getItem(key) { return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null; },
+    setItem(key, value) { data[key] = String(value); },
+    removeItem(key) { delete data[key]; }
+  };
+}
+
+// WHY: a fresh engine and a fresh shelf per check, so one check's registration can never be the reason
+//      the next one passes.
+function addOnHost(packed) {
+  assert(existsSync(addOnPath), 'js/user-packs.js is missing, so nothing adds a pack at runtime');
+  const box = freshContext();
+  runScript(box, path.join(v1, 'js', 'engine.js'));
+  shippedPacks.forEach((name) => runScript(box, path.join(v1, 'js', 'packs', name)));
+  runScript(box, addOnPath);
+  assert(box.LoopworksUserPacks, 'js/user-packs.js did not define the LoopworksUserPacks global');
+  const U = box.LoopworksUserPacks;
+  const store = storeStub(packed === undefined ? {} : { [U.KEY]: packed });
+  const shelfIds = () => box.Loopworks.packs().map((entry) => entry.pack);
+  return { box, U, store, host: { localStorage: store }, shelfIds, shelf: () => box.Loopworks.packs() };
+}
+
+function addedLevel(overrides) {
+  return Object.assign({
+    id: 'sandbox-1',
+    title: 'Straight Line',
+    teaches: 'sequence',
+    budget: 3,
+    goal: { kind: 'visit', count: 1 },
+    goalSentence: 'Walk onto the marked pad.',
+    teachesSentence: 'One instruction after another.',
+    rows: ['#####', '#...#', '#####'],
+    start: { x: 1, y: 1, dir: 'E' },
+    pads: [[3, 1]],
+    crates: []
+  }, overrides || {});
+}
+
+function addedPack(overrides) {
+  return Object.assign({
+    id: 'sandbox',
+    name: 'The Sandbox',
+    subject: 'programming logic',
+    blurb: 'A level made on this machine.',
+    verbs: ['forward', 'turn left', 'turn right'],
+    sensors: ['wall ahead', 'clear ahead'],
+    rules: {},
+    levels: [addedLevel()]
+  }, overrides || {});
+}
+
+check('app: a pack the player adds on this machine reaches the shelf and plays', () => {
+  const g = addOnHost(JSON.stringify([addedPack()]));
+  const before = g.shelf().length;
+  const result = g.U.load(g.host);
+  assert(result.ok, `the good pack was refused: ${result.errors.join('; ')}`);
+  assert(g.shelf().length === before + 1, `the shelf held ${before} packs and now holds ${g.shelf().length}`);
+  const entry = g.shelf().find((item) => item.pack.id === 'sandbox');
+  assert(entry, 'the added pack never reached the shelf');
+  assert(entry.errors.length === 0, `the engine rejected the added pack: ${entry.errors.join('; ')}`);
+  const run = g.box.Loopworks.run(entry.pack, 'sandbox-1', 'forward 2');
+  assert(run.status === 'solved', `the added level did not play out: ${run.status} / ${run.reason}`);
+  return `shelf ${before} -> ${g.shelf().length}, solved in ${run.linesUsed} lines`;
+});
+
+check('app: a board that does not line up is refused in the words the engine uses', () => {
+  const g = addOnHost();
+  const ragged = addedPack({ levels: [addedLevel({ rows: ['#####', '#...#', '####'] })] });
+  const verdict = g.U.validate([ragged], g.shelfIds());
+  assert(!verdict.ok, 'a board with a short row was accepted');
+  const text = verdict.errors.join(' ');
+  assert(/row 2 is 4 cells wide, the others are 5/.test(text), `the engine's own sentence is missing: ${text}`);
+  const unknown = addedPack({ verbs: ['forward', 'hover'] });
+  const second = g.U.validate([unknown], g.shelfIds());
+  assert(!second.ok && /"hover" is not a verb the engine knows/.test(second.errors.join(' ')), `a word the drone cannot do slipped through: ${second.errors.join(' ')}`);
+  const badText = g.U.parse('{ this is not a level pack ');
+  assert(!badText.ok && /is not a level pack/.test(badText.errors.join(' ')), 'text that is not a level pack was accepted');
+  assert(badText.packs.length === 0, 'unparseable text still produced packs');
+  return verdict.errors[0];
+});
+
+check('app: a pack id already on the shelf is refused by name', () => {
+  const g = addOnHost();
+  const verdict = g.U.validate([addedPack({ id: 'depot' })], g.shelfIds());
+  assert(!verdict.ok, 'a second pack called depot was accepted');
+  assert(/"depot"/.test(verdict.errors.join(' ')), `the refusal does not name the id: ${verdict.errors.join(' ')}`);
+  assert(g.shelf().length === g.shelfIds().length, 'a refused pack still reached the shelf');
+  return verdict.errors.join('; ');
+});
+
+check('app: a level id already used is refused by name, shipped or added', () => {
+  const g = addOnHost();
+  const shipped = g.U.validate([addedPack({ levels: [addedLevel({ id: 'depot-1' })] })], g.shelfIds());
+  assert(!shipped.ok, 'a level called depot-1 was accepted beside the real one');
+  assert(/"depot-1"/.test(shipped.errors.join(' ')), `the refusal does not name the id: ${shipped.errors.join(' ')}`);
+  const twins = g.U.validate([addedPack({ levels: [addedLevel(), addedLevel()] })], g.shelfIds());
+  assert(!twins.ok, 'two levels with the same id in one pack were accepted');
+  assert(/"sandbox-1"/.test(twins.errors.join(' ')), `the twin refusal does not name the id: ${twins.errors.join(' ')}`);
+  return shipped.errors[0];
+});
+
+check('app: an oversized board and an overlong pack are refused', () => {
+  const g = addOnHost();
+  assert(g.U.MAX_CELLS === 24, `the board cap reads ${g.U.MAX_CELLS}, not the twenty-four cells the layout is proven at`);
+  assert(g.U.MAX_LEVELS === 20, `the pack cap reads ${g.U.MAX_LEVELS}, not the twenty levels the GRILL locked`);
+  const tall = [];
+  for (let y = 0; y < 25; y += 1) tall.push(y === 0 || y === 24 ? '#####' : '#...#');
+  const tooBig = g.U.validate([addedPack({ levels: [addedLevel({ rows: tall })] })], g.shelfIds());
+  assert(!tooBig.ok, 'a board of twenty-five rows was accepted');
+  assert(/24/.test(tooBig.errors.join(' ')) && /sandbox-1/.test(tooBig.errors.join(' ')), `the size refusal is unclear: ${tooBig.errors.join(' ')}`);
+  const wide = '#' + '.'.repeat(30) + '#';
+  const tooWide = g.U.validate([addedPack({ levels: [addedLevel({ rows: [wide, wide, wide], pads: [[2, 1]] })] })], g.shelfIds());
+  assert(!tooWide.ok, `a board ${wide.length} cells across was accepted`);
+  assert(/24/.test(tooWide.errors.join(' ')) && /sandbox-1/.test(tooWide.errors.join(' ')), `the width refusal is unclear: ${tooWide.errors.join(' ')}`);
+  const many = [];
+  for (let i = 0; i < 21; i += 1) many.push(addedLevel({ id: `sandbox-${i + 1}` }));
+  const tooLong = g.U.validate([addedPack({ levels: many })], g.shelfIds());
+  assert(!tooLong.ok, 'a pack of twenty-one levels was accepted');
+  assert(/20/.test(tooLong.errors.join(' ')), `the length refusal does not name the cap: ${tooLong.errors.join(' ')}`);
+  return `board ${g.U.MAX_CELLS} cells, pack ${g.U.MAX_LEVELS} levels`;
+});
+
+check('app: a store that holds anything else leaves the shelf alone and is never run', () => {
+  const g = addOnHost('globalThis.PWNED = 1');
+  const before = g.shelf().length;
+  const result = g.U.load(g.host);
+  assert(g.box.PWNED === undefined, 'text from storage was executed');
+  assert(g.shelf().length === before, `the shelf changed from ${before} packs to ${g.shelf().length}`);
+  assert(!result.ok, 'an unreadable store reported no problem');
+  assert(result.errors.join(' ').includes(g.U.KEY), `the report does not name the key: ${result.errors.join(' ')}`);
+  assert(result.loaded.length === 0, 'an unreadable store still loaded something');
+  const asText = g.U.read(g.host, (message) => message);
+  assert(Array.isArray(asText) && asText.length === 0, 'a corrupt store did not read as an empty list');
+  return result.errors.join('; ');
+});
+
+check('app: removing an added pack takes it off the shelf on the next read', () => {
+  const g = addOnHost(JSON.stringify([addedPack()]));
+  const before = g.shelf().length;
+  g.U.load(g.host);
+  assert(g.shelf().length === before + 1, 'the added pack never reached the shelf');
+  g.U.remove('sandbox', g.host);
+  const left = JSON.parse(g.store.data[g.U.KEY]);
+  assert(Array.isArray(left) && left.length === 0, `removing it left ${JSON.stringify(left)}`);
+  const again = addOnHost(g.store.data[g.U.KEY]);
+  assert(again.shelf().length === before, `a fresh read of that store holds ${again.shelf().length} packs, expected ${before}`);
+  const loaded = again.U.load(again.host);
+  assert(loaded.ok && loaded.loaded.length === 0, `the emptied store reported ${loaded.errors.join('; ')}`);
+  return `shelf ${before + 1} -> ${before}, and the record is left alone`;
+});
+
+check('app: an added pack is stored as data the engine can still check', () => {
+  const g = addOnHost();
+  const written = g.U.write([addedPack()], g.host);
+  assert(written.ok, `writing a good pack failed: ${written.errors.join('; ')}`);
+  const raw = g.store.data[g.U.KEY];
+  assert(typeof raw === 'string', 'the store holds something that is not text');
+  const parsed = JSON.parse(raw);
+  assert(Array.isArray(parsed) && parsed.length === 1, `the store holds ${JSON.stringify(parsed)}`);
+  assert(parsed[0].levels[0].rows[0] === '#####', 'the board did not survive the round trip');
+  const reload = addOnHost(raw);
+  const result = reload.U.load(reload.host);
+  assert(result.ok && result.loaded.length === 1, `a pack read back from storage refused: ${result.errors.join('; ')}`);
+  return `${raw.length} characters round-trip`;
+});
 
 // WHY: a failure has to say which promise broke, so the report names the check and the reason.
 const failed = results.filter((result) => !result.ok);

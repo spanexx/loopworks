@@ -128,6 +128,9 @@
             <div class="kicker">Evidence</div>
             <h1>What each program cost</h1>
             <p>Solved levels show the lines they took against their budget. The record stays in this browser on this machine. Pick any level to work on it again.</p>
+            <div class="evidence-actions">
+              <button type="button" class="add-level" id="pack-add-open" aria-haspopup="dialog" aria-controls="pack-add-modal" title="Add a level">Add a level</button>
+            </div>
           </div>
           <div class="evidence-list" id="evidence-list"></div>
         </div>
@@ -164,6 +167,34 @@
     </div>
   </dialog>
 
+  <!-- WHY: the door to the shelf sits in the Evidence view, which is the view that already speaks about
+       the levels on this machine, and it is a native dialog so the focus trap, Escape and the backdrop
+       come with it. The top bar and the drawer are the rows the learner locked and gain no control. -->
+  <dialog class="pack-add-modal" id="pack-add-modal" aria-labelledby="pack-add-title">
+    <div class="pack-add-inner">
+      <div class="pack-add-head">
+        <div>
+          <div class="kicker">Add a level</div>
+          <h2 id="pack-add-title">Levels on this machine</h2>
+        </div>
+        <button type="button" class="icon-btn" id="pack-add-close" aria-label="Close the add a level box" title="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <p class="pack-add-intro">Paste a level pack, or pick a .json file you were given. A pack is the same shape the atlas writes, with the code wrapper taken out. What you add stays in this browser - there is no server to send it to.</p>
+      <textarea class="pack-add-text" id="pack-add-text" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="The level pack" placeholder='{ "id": "my-yard", "name": "My Yard", "levels": [ { } ] }'></textarea>
+      <div class="pack-add-foot">
+        <input type="file" class="pack-add-file" id="pack-add-file" accept="application/json,.json" aria-label="Pick a .json level pack">
+        <button type="button" class="pack-add-save" id="pack-add-save">Add it</button>
+      </div>
+      <p class="pack-add-error" id="pack-add-error" aria-live="polite" hidden></p>
+      <div class="pack-add-saved">
+        <div class="kicker">On this machine</div>
+        <div class="pack-add-list" id="pack-add-list"></div>
+      </div>
+    </div>
+  </dialog>
+
   <noscript><p class="noscript">Loopworks needs JavaScript to run the drone.</p></noscript>
 
   <script src="js/engine.js"></script>
@@ -173,6 +204,7 @@
   <script src="js/evidence.js"></script>
   <script src="js/words.js"></script>
   <script src="js/sound.js"></script>
+  <script src="js/user-packs.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
