@@ -8,6 +8,15 @@ network at run time.
 Double-click `index.html`, or open this folder in a browser. The repository root `index.html`
 redirects here, and on GitHub Pages the app is served from `v1/`.
 
+## Install it, and play it offline
+
+On GitHub Pages the browser's own menu offers to install Loopworks, because this folder carries
+`manifest.webmanifest`, the PNG icons under `icons/` and the worker `sw.js`. The first online visit
+fills the worker's cache; after that the page, the stylesheet, the modules and the packs open with
+the network off. Progress, theme, sound and any pack you added stay in this browser's storage, so an
+installed app and a browser tab share the same record. Opened from disk, the page registers no
+worker - `file://` cannot - and plays exactly as before.
+
 ## Check it
 
 `npm run check` from the repository root runs `tools/verify.mjs` with plain Node, no dependencies.

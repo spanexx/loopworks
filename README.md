@@ -22,6 +22,11 @@ are copied into each version; they are not edited here.
 Open `v1/index.html` from disk, or use the root `index.html` redirect. The app also runs on GitHub
 Pages; the `deploy` branch is the published site.
 
+On Pages the app is installable: the browser's own menu offers "Install Loopworks", and after one
+online visit the worker (`v1/sw.js`) serves the page and its modules with the network off. Opened
+from disk there is no worker - a `file://` page cannot register one - and the page still plays.
+Installing changes nothing about the record; it stays on the machine either way.
+
 ## Check it
 
 `npm run check` runs `tools/verify.mjs` with plain Node, no dependencies. In the game workspace it

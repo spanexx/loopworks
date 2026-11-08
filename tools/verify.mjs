@@ -322,7 +322,7 @@ check('app: the page loads the theme first, then the rules, every pack on disk, 
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
   const isPack = (src) => /^js\/packs\/[a-z0-9-]+\.js$/.test(src);
   const own = scripts.filter((src) => !isPack(src));
-  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/app.js'];
+  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/app.js', 'js/pwa.js'];
   assert(JSON.stringify(own) === JSON.stringify(expected), `the app's own scripts are ${own.join(', ')}`);
 
   const untagged = shippedScripts.filter((from) => !scripts.includes(from));
@@ -369,8 +369,251 @@ check('app: every src and href is relative and lands on a real file', () => {
   return `${urls.length} links checked`;
 });
 
+// ---------------------------------------------------------------- installable
+
+// WHY: installable is a promise the browser checks, not one a README can make - a manifest that starts
+//      the app in its own folder, icon files that really are PNGs of the size they declare, and a worker
+//      that answers when the network cannot. Each part is read or run here, so a missing one is red
+//      before a phone finds out.
+const manifestPath = path.join(v1, 'manifest.webmanifest');
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function pngSize(file) {
+  const bytes = readFileSync(file);
+  assert(bytes.subarray(0, 8).equals(pngSignature), `${path.relative(v1, file)} is not a PNG`);
+  assert(bytes.toString('ascii', 12, 16) === 'IHDR', `${path.relative(v1, file)} has no IHDR header`);
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20), bytes: bytes.length };
+}
+
+check('app: the manifest starts the app where it sits and carries both icon sizes', () => {
+  const manifest = JSON.parse(read(manifestPath));
+  assert(manifest.name === 'Loopworks', `the manifest names "${manifest.name}"`);
+  assert(typeof manifest.short_name === 'string' && manifest.short_name.length > 0 && manifest.short_name.length <= 12,
+    `short_name "${manifest.short_name}" does not fit a launcher label`);
+  ['id', 'start_url', 'scope'].forEach((field) => {
+    assert(manifest[field] === './', `${field} is "${manifest[field]}" - the app has to start in its own folder, never at a host root`);
+  });
+  assert(manifest.display === 'standalone', `display is "${manifest.display}", so an installed app would keep browser chrome`);
+  assert(/^#[0-9a-f]{6}$/i.test(manifest.background_color || ''), 'background_color is not a hex colour');
+  assert(/^#[0-9a-f]{6}$/i.test(manifest.theme_color || ''), 'theme_color is not a hex colour');
+  assert(manifest.background_color.toLowerCase() === manifest.theme_color.toLowerCase(),
+    'the launch background and the theme strip disagree, so the first frame would flash');
+
+  const icons = manifest.icons || [];
+  ['192x192', '512x512'].forEach((size) => {
+    assert(icons.some((icon) => icon.sizes === size && icon.type === 'image/png' && icon.purpose === 'any'),
+      `no ${size} PNG icon is declared for the launcher`);
+  });
+  assert(icons.some((icon) => icon.purpose === 'maskable'), 'no maskable icon is declared');
+  icons.forEach((icon) => {
+    assert(!icon.src.includes('://') && !icon.src.startsWith('/'), `${icon.src} leaves the app folder`);
+    const file = path.join(v1, icon.src);
+    assert(statSync(file).isFile(), `${icon.src} has no file`);
+    const [width, height] = icon.sizes.split('x').map(Number);
+    const actual = pngSize(file);
+    assert(actual.width === width && actual.height === height,
+      `${icon.src} is ${actual.width}x${actual.height} but is declared ${icon.sizes}`);
+    assert(actual.bytes > 200, `${icon.src} is ${actual.bytes} bytes, too small to be a drawn icon`);
+  });
+  return `${icons.length} icons, ${manifest.display}, starts at ${manifest.start_url}`;
+});
+
+check('app: the page names the manifest, both theme ramps and the touch icon', () => {
+  const page = read(path.join(v1, 'index.html'));
+  assert(/<link rel="manifest" href="manifest\.webmanifest">/.test(page), 'the page does not link the manifest');
+  assert(/<link rel="apple-touch-icon" href="icons\/apple-touch-icon\.png">/.test(page), 'the page has no apple touch icon');
+  const themes = [...page.matchAll(/<meta name="theme-color" content="([^"]+)"/g)].map((match) => match[1]);
+  assert(themes.length === 2, `the page carries ${themes.length} theme colours, expected one per ramp`);
+  assert(/<meta name="apple-mobile-web-app-title" content="Loopworks">/.test(page), 'the home-screen label is not set');
+  const touch = path.join(v1, 'icons', 'apple-touch-icon.png');
+  const size = pngSize(touch);
+  assert(size.width === 180 && size.height === 180, `the touch icon is ${size.width}x${size.height}, expected 180x180`);
+  return `${themes.length} theme colours, ${path.basename(touch)} at ${size.width}px`;
+});
+
+// WHY: the worker is loaded into a vm holding only the globals it touches, so these checks run the real
+//      handlers instead of reading their source. A worker that only looks right is the failure this pack
+//      exists to prevent.
+function workerHost() {
+  const listeners = {};
+  const stores = new Map();
+  const calls = { skipped: 0, claimed: 0, deleted: [], fetched: [], puts: [] };
+  let offline = false;
+  const reply = (body, ok = true) => ({ ok, body, clone() { return reply(body, ok); } });
+  // WHY: Cache.match resolves a relative string against the worker's own URL, so the fake does too;
+  //      that is what makes the worker's "./index.html" fallback reachable in the test at all.
+  const keyOf = (request) => (typeof request === 'string'
+    ? new URL(request, 'https://example.test/v1/sw.js').href
+    : request.url);
+  function store(name) {
+    if (!stores.has(name)) stores.set(name, new Map());
+    return stores.get(name);
+  }
+  const caches = {
+    async open(name) {
+      const shelf = store(name);
+      return {
+        async put(request, response) { calls.puts.push(keyOf(request)); shelf.set(keyOf(request), response); },
+        async match(request) { return shelf.get(keyOf(request)) || null; }
+      };
+    },
+    async match(request) {
+      for (const shelf of stores.values()) {
+        const hit = shelf.get(keyOf(request));
+        if (hit) return hit;
+      }
+      return null;
+    },
+    async keys() { return [...stores.keys()]; },
+    async delete(name) { calls.deleted.push(name); return stores.delete(name); }
+  };
+  const ctx = {
+    console,
+    URL,
+    Promise,
+    caches,
+    fetch: async (request) => {
+      calls.fetched.push(keyOf(request));
+      if (offline) throw new Error('the network is gone');
+      return reply(`network:${keyOf(request)}`);
+    },
+    Response: { error: () => reply('', false) }
+  };
+  ctx.location = { origin: 'https://example.test' };
+  ctx.self = {
+    location: ctx.location,
+    addEventListener(type, fn) { listeners[type] = fn; },
+    async skipWaiting() { calls.skipped += 1; },
+    clients: { async claim() { calls.claimed += 1; } }
+  };
+  vm.createContext(ctx);
+  runScript(ctx, path.join(v1, 'sw.js'));
+  const settle = () => new Promise((done) => setTimeout(done, 0));
+  async function signal(type) {
+    const waiting = [];
+    listeners[type]({ waitUntil(promise) { waiting.push(promise); } });
+    await Promise.all(waiting);
+    await settle();
+  }
+  async function ask(request) {
+    let answered = null;
+    listeners.fetch({ request, respondWith(promise) { answered = promise; } });
+    return answered === null ? null : await answered;
+  }
+  return { calls, stores, signal, ask, settle, goOffline: () => { offline = true; } };
+}
+
+check('app: the worker installs, takes over, and serves the app when the network is gone', async () => {
+  const worker = workerHost();
+  await worker.signal('install');
+  assert(worker.calls.skipped === 1, 'install did not take over from the page that is already open');
+
+  worker.stores.set('an-old-scheme', new Map([['https://example.test/v1/old.js', 'old']]));
+  await worker.signal('activate');
+  assert(worker.calls.deleted.includes('an-old-scheme'), 'activate kept a cache from an older scheme');
+  assert(!worker.calls.deleted.includes('loopworks-v1'), 'activate deleted the cache it is meant to keep');
+  assert(worker.calls.claimed === 1, 'activate did not claim the open page');
+
+  const page = { method: 'GET', mode: 'navigate', url: 'https://example.test/v1/index.html' };
+  const live = await worker.ask(page);
+  assert(live && live.body === `network:${page.url}`, 'a page on a live network did not come from the network');
+  await worker.settle();
+  assert(worker.calls.puts.includes(page.url), 'the page that loaded online was not kept for the next visit');
+
+  const assetUrl = 'https://example.test/v1/js/app.js';
+  const cold = await worker.ask({ method: 'GET', mode: 'cors', url: assetUrl });
+  assert(cold && cold.body === `network:${assetUrl}`, 'an asset seen for the first time did not come from the network');
+  await worker.settle();
+
+  worker.goOffline();
+  const offlinePage = await worker.ask(page);
+  assert(offlinePage && offlinePage.body === `network:${page.url}`, 'an offline page did not come back from the cache');
+  const fallback = await worker.ask({ method: 'GET', mode: 'navigate', url: 'https://example.test/v1/' });
+  assert(fallback && fallback.body === `network:${page.url}`, 'an offline page with no exact entry did not fall back to index.html');
+  const warm = await worker.ask({ method: 'GET', mode: 'cors', url: assetUrl });
+  assert(warm && warm.body === `network:${assetUrl}`, 'an offline asset did not come back from the cache');
+  const never = await worker.ask({ method: 'GET', mode: 'cors', url: 'https://example.test/v1/js/never-seen.js' });
+  assert(never && never.ok === false, 'an offline asset that was never kept did not answer with a plain error');
+
+  const away = await worker.ask({ method: 'GET', mode: 'cors', url: 'https://cdn.example.net/library.js' });
+  assert(away === null, 'the worker answered for another machine');
+  const post = await worker.ask({ method: 'POST', mode: 'cors', url: 'https://example.test/v1/import' });
+  assert(post === null, 'the worker answered a request that is not a read');
+  return 'install, activate, page first, asset first, offline page, offline asset, pass-through';
+});
+
+check('app: the page registers the worker on http, and stays quiet on disk', () => {
+  function started(env) {
+    const calls = [];
+    const ctx = { console };
+    ctx.globalThis = ctx;
+    ctx.window = ctx;
+    if (env.navigator) ctx.navigator = env.navigator(calls);
+    if (env.location) ctx.location = env.location;
+    vm.createContext(ctx);
+    runScript(ctx, path.join(v1, 'js', 'pwa.js'));
+    return calls;
+  }
+  const worker = (calls) => ({ serviceWorker: { register: (url) => { calls.push(url); return Promise.resolve(); } } });
+  assert(started({ navigator: worker, location: { protocol: 'https:' } }).join() === 'sw.js', 'https did not register sw.js');
+  assert(started({ navigator: worker, location: { protocol: 'http:' } }).join() === 'sw.js', 'a local http page did not register sw.js');
+  assert(started({ navigator: worker, location: { protocol: 'file:' } }).length === 0, 'a page opened from disk tried to register a worker');
+  assert(started({ navigator: () => ({}), location: { protocol: 'https:' } }).length === 0, 'a browser without workers was not left alone');
+  assert(statSync(path.join(v1, 'sw.js')).isFile(), 'the page registers a file that is not there');
+  return 'https and http register once, file:// and no-worker stay quiet';
+});
+
+check('app: the worker names no subject and carries its pack line', () => {
+  const text = read(path.join(v1, 'sw.js')).toLowerCase();
+  const names = new Set();
+  shelf().forEach((pack) => {
+    [pack.id, pack.name].forEach((value) => { if (value) names.add(String(value).toLowerCase()); });
+  });
+  const named = [...names].filter((word) => text.includes(word));
+  assert(named.length === 0, `v1/sw.js names ${named.join(', ')}`);
+  assert(/loopworks-installable/.test(text), 'v1/sw.js carries no PACK line, so its copy has no origin');
+  return `${names.size} subject words from ${shelf().length} packs, none in the worker`;
+});
+
+// WHY: the publish job copies a named list into the deploy branch, so a file added to the app but not to
+//      that list sits on the commit and is missing from the site. This check expands the job's own copy
+//      rules and asks them about every file the page and the manifest name.
+check('app: every file the page and the manifest name reaches the deploy branch', () => {
+  const workflow = read(path.join(appRoot, '.github', 'workflows', 'deploy.yml'));
+  const rules = [...workflow.matchAll(/^\s*cp\s+(\S+)\s+"\$site\/([^"]*)"/gm)]
+    .map((match) => ({ from: match[1], to: match[2] }));
+  assert(rules.length >= 6, `the publish step has ${rules.length} copy rules to read`);
+
+  function reaches(file) {
+    return rules.some((rule) => {
+      if (rule.to === file) return true;
+      if (!rule.from.includes('*')) return rule.to.endsWith('/') && `${rule.to}${path.posix.basename(rule.from)}` === file;
+      const shape = new RegExp(`^${rule.from.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')}$`);
+      return shape.test(file);
+    });
+  }
+
+  const manifest = JSON.parse(read(manifestPath));
+  const page = read(path.join(v1, 'index.html'));
+  const links = [...page.matchAll(/\b(?:src|href)="([^"]+)"/g)]
+    .map((match) => match[1])
+    .filter((url) => !url.startsWith('#') && !url.startsWith('data:'))
+    .map((url) => `v1/${url.split('?')[0].split('#')[0]}`);
+  const required = [...new Set([
+    'v1/index.html',
+    'v1/manifest.webmanifest',
+    'v1/sw.js',
+    ...links,
+    ...manifest.icons.map((icon) => `v1/${icon.src}`)
+  ])];
+  const missing = required.filter((file) => !reaches(file));
+  assert(missing.length === 0, `the deploy branch would miss ${missing.join(', ')}`);
+  return `${rules.length} copy rules cover ${required.length} files`;
+});
+
 // WHY: the app has to open from disk and from a Pages folder that can move. A remote stylesheet or
-//      a module import would work in exactly one of those places and fail in the other.
+//      a module import would work in exactly one of those places and fail in the other. The worker is
+//      the one file allowed to call fetch, and its own check proves every call stays on this origin.
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {
     const full = path.join(dir, name);
@@ -379,9 +622,10 @@ function walk(dir) {
 }
 const v1Files = walk(v1);
 const v1Text = v1Files.filter((file) => /\.(html|css|js)$/.test(file));
+const pageText = v1Text.filter((file) => file !== path.join(v1, 'sw.js'));
 
 check('app: nothing loads from another machine', () => {
-  v1Text.forEach((file) => {
+  pageText.forEach((file) => {
     // WHY: a data: URI is carried inside the file, but an SVG namespace inside it starts with
     //      http://, which is not a request. Mask those payloads before looking for remote URLs.
     const text = read(file)
@@ -394,7 +638,6 @@ check('app: nothing loads from another machine', () => {
   });
   return `${v1Text.length} files stay local`;
 });
-
 // WHY: the promise is that the app opens without a server, so what is refused is module syntax. An
 //      unanchored "import" also fired on a comment naming a document - and it read the same either way,
 //      so the one form that actually breaks file://, a dynamic import() inside a function body, was only

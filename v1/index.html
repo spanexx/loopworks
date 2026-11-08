@@ -8,6 +8,15 @@
   <!-- WHY: an inline icon is the brand mark with no file to fetch, and it stops the browser's
        automatic /favicon.ico request, which would cost a round trip on every first visit. -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%230a0f14'/%3E%3Crect x='11' y='11' width='10' height='10' fill='%23f3a712'/%3E%3C/svg%3E">
+  <!-- WHY: a manifest, a PNG icon set and a worker are the three things a browser asks for before it
+       offers Install; the page itself stays one page, and everything here is local. -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#0a0f14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ece7db" media="(prefers-color-scheme: light)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Loopworks">
   <!-- WHY: the theme runs before the sheet paints, so opening the app never flashes the other ramp. -->
   <script src="js/theme.js"></script>
   <link rel="stylesheet" href="css/app.css">
@@ -209,5 +218,6 @@
   <script src="js/level-prompt.js"></script>
   <script src="js/user-packs.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/pwa.js"></script>
 </body>
 </html>

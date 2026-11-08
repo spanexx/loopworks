@@ -39,13 +39,16 @@ jobs:
           site="$root/site"
           git worktree add --detach "$site" FETCH_HEAD
           rm -rf "$site/v1"
-          install -d "$site/v1/css" "$site/v1/js/packs"
+          install -d "$site/v1/css" "$site/v1/js/packs" "$site/v1/icons"
           touch "$site/.nojekyll"
           cp index.html "$site/index.html"
           cp v1/index.html "$site/v1/index.html"
           cp v1/css/app.css "$site/v1/css/app.css"
           cp v1/js/*.js "$site/v1/js/"
           cp v1/js/packs/*.js "$site/v1/js/packs/"
+          cp v1/manifest.webmanifest "$site/v1/manifest.webmanifest"
+          cp v1/sw.js "$site/v1/sw.js"
+          cp v1/icons/*.png "$site/v1/icons/"
           cd "$site"
           git add --all -- index.html .nojekyll v1
           if git diff --cached --quiet; then
