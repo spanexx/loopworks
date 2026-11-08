@@ -8,6 +8,9 @@
 //      soft keyboard is up, following PRD-TRD section 28 and GRILL entry 30.
 // 2026-11-04 qoder-agent: the phone drawer is one row - the run buttons flank the line being typed
 //      and its height is pulled from one line by the edge, following GRILL entry 32.
+// 2026-11-08 qoder-agent: the buttons find their homes - Step and Reset on the drone panel's own
+//      corners, Run and the level arrows pinned inside the typing box, and a touch acting on the
+//      first tap - following GRILL-loopworks-input-area decisions 1-6.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -185,15 +188,17 @@
     //      typing narrows it again - so the board is always sized against the room that is really
     //      inside the box it has to fit in.
     const pad = host.getComputedStyle(el.field);
+    const stagePad = Math.round(parseFloat(host.getComputedStyle(el.stage).paddingTop) || 0);
     const roomX = Math.round(parseFloat(pad.paddingLeft) + parseFloat(pad.paddingRight));
     const roomY = Math.round(parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom));
     const widthRoom = el.field.clientWidth - roomX;
     // WHY: 98 is the verdict and the log under the board. While typing, the sheet hides that pair,
     //      so reserving their height would shrink the board against room that is no longer there
     //      and pin it to its floor. The floor itself is lower while typing, because a board that
-    //      overflows its own box hides the line being typed.
+    //      overflows its own box hides the line being typed. The stage's top strip holds the Step
+    //      and Reset corners and is spent on every width, keyboard or not.
     const typing = typingOn();
-    const heightRoom = el.field.clientHeight - roomY - (typing ? 0 : 98);
+    const heightRoom = el.field.clientHeight - roomY - stagePad - (typing ? 0 : 98);
     const byHeight = ((heightRoom - 22 - (rows - 1) * 5) * cols) / rows;
     const width = Math.max(typing ? 120 : 200, Math.min(480, widthRoom, byHeight));
     el.board.style.width = `${Math.round(width)}px`;
@@ -853,14 +858,40 @@
     if (el.wordsModal.open) el.wordsModal.close();
   }
 
+  // WHY: on a touch screen the tap that should press a button is also the tap that dismisses the
+  //      keyboard, and the blur that follows moves the row out from under the finger - so a touch
+  //      acts on pointerdown, before the keyboard starts to close, and the click that follows it is
+  //      ignored. Mouse and keyboard keep the click, where press-and-release is the expected feel.
+  function press(target, act) {
+    let lastTouch = 0;
+    target.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'touch') return;
+      event.preventDefault();
+      lastTouch = event.timeStamp;
+      act();
+    });
+    target.addEventListener('click', (event) => {
+      if (event.timeStamp - lastTouch < 800) return;
+      act();
+    });
+  }
+
+  function stepLevel(direction) {
+    const spot = lineAt(direction);
+    if (!spot) return;
+    openLevel(spot.pack, spot.level);
+    showView('work');
+    el.code.focus();
+  }
+
   // ---------------------------------------------------------------- wiring
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => showView(tab.dataset.view));
   });
-  el.run.addEventListener('click', startRun);
-  el.step.addEventListener('click', stepOnce);
-  el.reset.addEventListener('click', resetRun);
+  press(el.run, startRun);
+  press(el.step, stepOnce);
+  press(el.reset, resetRun);
   el.logToggle.addEventListener('click', toggleLog);
   el.wordsOpen.addEventListener('click', openWords);
   el.wordsClose.addEventListener('click', closeWords);
@@ -869,20 +900,8 @@
   el.wordsModal.addEventListener('click', (event) => {
     if (event.target === el.wordsModal) closeWords();
   });
-  el.prevLevel.addEventListener('click', () => {
-    const prev = lineAt(-1);
-    if (!prev) return;
-    openLevel(prev.pack, prev.level);
-    showView('work');
-    el.code.focus();
-  });
-  el.nextLevel.addEventListener('click', () => {
-    const next = lineAt(1);
-    if (!next) return;
-    openLevel(next.pack, next.level);
-    showView('work');
-    el.code.focus();
-  });
+  press(el.prevLevel, () => stepLevel(-1));
+  press(el.nextLevel, () => stepLevel(1));
 
   el.code.addEventListener('input', (event) => {
     if (quiet) return;
