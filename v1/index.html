@@ -67,6 +67,18 @@
         <section class="main" id="main">
           <section class="field" id="field">
             <div class="stage" id="stage">
+              <!-- WHY: Step and Reset act on the world the board shows, not on the lines being typed,
+                   so they sit on the panel's own top corners and the typed line keeps its whole width. -->
+              <div class="stage-tools left">
+                <button type="button" class="tool icon-only" id="step" aria-label="Step one tick" title="Step one tick">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5l9 7-9 7z"/><rect x="17" y="5" width="2" height="14"/></svg>
+                </button>
+              </div>
+              <div class="stage-tools right">
+                <button type="button" class="tool icon-only quiet" id="reset" aria-label="Reset the run" title="Reset the run">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10a8 8 0 1 1 2 8M4 4v6h6"/></svg>
+                </button>
+              </div>
               <div class="board" id="board" role="img" aria-label="The level board"></div>
               <div class="verdict" id="verdict" data-tone="idle" aria-live="polite" aria-atomic="true">
                 <span class="verdict-icon" id="verdict-icon" aria-hidden="true"></span>
@@ -101,32 +113,25 @@
               <pre class="gutter" id="gutter" aria-hidden="true">1</pre>
               <textarea id="code" rows="1" wrap="off" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Program" aria-autocomplete="list" aria-controls="suggest"></textarea>
               <div class="suggest" id="suggest" role="listbox" aria-label="Words" hidden></div>
-            </div>
-            <div class="hint"><kbd>Tab</kbd> completes or indents.</div>
-            <div class="controls">
-              <div class="controls-left">
-                <button type="button" class="icon-only" id="step" aria-label="Step one tick" title="Step one tick">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5l9 7-9 7z"/><rect x="17" y="5" width="2" height="14"/></svg>
-                </button>
-                <button type="button" class="icon-only quiet" id="reset" aria-label="Reset the run" title="Reset the run">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 10a8 8 0 1 1 2 8M4 4v6h6"/></svg>
-                </button>
-              </div>
-              <div class="controls-right">
+              <!-- WHY: Run and the level arrows belong to the typing box, pinned inside its bottom-right
+                   corner, so a drawer pulled taller grows the lines and never slides the buttons out
+                   from under the thumb already aiming at them. -->
+              <div class="program-tools">
                 <div class="level-pair">
-                  <button type="button" class="icon-only quiet level-prev" id="prev-level" title="Previous level" aria-label="Previous level" hidden>
+                  <button type="button" class="tool icon-only quiet level-prev" id="prev-level" title="Previous level" aria-label="Previous level" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
                   </button>
-                  <button type="button" class="icon-only quiet level-next" id="next-level" title="Next level" aria-label="Next level" hidden>
+                  <button type="button" class="tool icon-only quiet level-next" id="next-level" title="Next level" aria-label="Next level" hidden>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
                   </button>
                 </div>
-                <button type="button" class="primary" id="run" title="Run the program (Ctrl+Enter)">
+                <button type="button" class="tool primary" id="run" title="Run the program (Ctrl+Enter)">
                   <span class="run-icon" id="run-icon" aria-hidden="true"></span>
                   <span class="sr-only" id="run-label">Run</span>
                 </button>
               </div>
             </div>
+            <div class="hint"><kbd>Tab</kbd> completes or indents.</div>
           </section>
         </section>
       </section>

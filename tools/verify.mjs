@@ -970,31 +970,57 @@ check('app: the level arrows follow the line in both directions and only show in
   const page = read(path.join(v1, 'index.html'));
   const app = read(path.join(v1, 'js', 'app.js'));
   const head = page.slice(page.indexOf('<header'), page.indexOf('</header>'));
-  const controls = page.slice(page.indexOf('class="controls"'), page.indexOf('</section>', page.indexOf('class="controls"')));
-  assert(/id="next-level"/.test(controls), 'the next arrow left the run controls');
-  assert(/id="prev-level"/.test(controls), 'the previous arrow is not beside the next one');
-  assert(/class="level-pair"/.test(controls), 'the two level arrows do not sit together');
+  const editorBox = page.slice(page.indexOf('class="editor"'), page.indexOf('class="hint"'));
+  assert(/id="next-level"/.test(editorBox), 'the next arrow left the typing box');
+  assert(/id="prev-level"/.test(editorBox), 'the previous arrow is not beside the next one');
+  assert(/class="level-pair"/.test(editorBox), 'the two level arrows do not sit together');
   assert(!/id="next-level"|id="prev-level"/.test(head), 'a level arrow is still in the top bar');
   assert(/const onWork = view === 'work'/.test(app) && /onWork \? lineAt\(-1\) : null/.test(app) && /onWork \? lineAt\(1\) : null/.test(app), 'the arrows ignore the current view');
   const show = app.slice(app.indexOf('function showView'), app.indexOf('function pick'));
   assert(/updateLevelNav\(\);/.test(show), 'switching views does not refresh the arrows');
-  return 'Work only, both directions, paired beside Run';
+  return 'Work only, both directions, paired inside the typing box';
 });
 
-check('app: the run control is a bigger icon on the right', () => {
+check('app: the run control is a bigger icon inside the typing box', () => {
   const page = read(path.join(v1, 'index.html'));
   const css = read(path.join(v1, 'css', 'app.css'));
   const app = read(path.join(v1, 'js', 'app.js'));
-  const controls = page.slice(page.indexOf('class="controls"'), page.indexOf('</section>', page.indexOf('class="controls"')));
-  assert(controls.indexOf('class="controls-left"') >= 0 && controls.indexOf('class="controls-right"') >= 0, 'the controls are not split into two sides');
-  assert(controls.indexOf('class="controls-left"') < controls.indexOf('class="controls-right"'), 'the run side is not on the right');
-  assert(/id="run"[\s\S]*class="sr-only" id="run-label"/.test(controls), 'the run control still shows a word');
-  assert(/\.controls \.primary\s*{[^}]*width:\s*52px/.test(css), 'the run button still stretches');
-  assert(/\.controls \.primary\s*{[^}]*min-height:\s*40px/.test(css), 'the run button is not the bigger one');
-  assert(/\.controls \.icon-only\s*{[^}]*width:\s*44px/.test(css), 'the quiet controls changed size');
+  const editorBox = page.slice(page.indexOf('class="editor"'), page.indexOf('class="hint"'));
+  assert(editorBox.indexOf('class="program-tools"') >= 0, 'the run controls are not inside the typing box');
+  assert(editorBox.indexOf('class="level-pair"') < editorBox.indexOf('id="run"'), 'the run side is not on the right');
+  assert(/id="run"[\s\S]*class="sr-only" id="run-label"/.test(editorBox), 'the run control still shows a word');
+  assert(/\.program-tools \.primary\s*{[^}]*width:\s*52px/.test(css), 'the run button still stretches');
+  assert(/\.program-tools \.primary\s*{[^}]*min-height:\s*40px/.test(css), 'the run button is not the bigger one');
+  assert(/\.tool\.icon-only\s*{[^}]*width:\s*44px/.test(css), 'the quiet controls changed size');
   assert(/rotate\(-45 12 12\)/.test(app), 'the play glyph is not tilted up');
   assert(/\.level-pair\s*{\s*display:\s*flex/.test(css), 'the level arrows are not one pair');
-  return 'a larger icon on the right, level arrows beside it';
+  return 'a larger icon in the box, level arrows beside it';
+});
+
+check('app: Step and Reset live in the corners of the drone panel', () => {
+  const page = read(path.join(v1, 'index.html'));
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const stage = page.slice(page.indexOf('class="stage"'), page.indexOf('</section>', page.indexOf('class="stage"')));
+  const editorBox = page.slice(page.indexOf('class="editor"'), page.indexOf('class="hint"'));
+  assert(/class="stage-tools left"[\s\S]*id="step"/.test(stage), 'Step is not in the panel top-left corner');
+  assert(/class="stage-tools right"[\s\S]*id="reset"/.test(stage), 'Reset is not in the panel top-right corner');
+  assert(stage.indexOf('class="stage-tools left"') < stage.indexOf('class="stage-tools right"'), 'the two corners are the same side');
+  assert(!/id="step"|id="reset"/.test(editorBox), 'a world control is still beside the typed line');
+  assert(/\.stage\s*{[^}]*position:\s*relative/.test(css), 'the stage gives the corners nothing to sit on');
+  assert(/\.stage-tools\s*{[^}]*position:\s*absolute/.test(css), 'the corner tools are in the flow');
+  assert(/\.stage-tools\.left\s*{\s*left:\s*0/.test(css) && /\.stage-tools\.right\s*{\s*right:\s*0/.test(css), 'the corners are not the panel edges');
+  return 'Step top-left, Reset top-right, nothing beside the line';
+});
+
+check('app: a touch acts on the first tap, before the keyboard closes', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/function press\(/.test(app), 'there is no single place that reads a press');
+  assert(/pointerdown/.test(app) && /pointerType !== 'touch'/.test(app), 'a tap is still read only on click, after the blur');
+  assert(/preventDefault\(\)/.test(app.slice(app.indexOf('function press('), app.indexOf('function press(') + 700)), 'the tap does not hold the keyboard still while it acts');
+  ['run', 'step', 'reset', 'prevLevel', 'nextLevel'].forEach((name) => {
+    assert(new RegExp('press\\(el\\.' + name).test(app), 'the ' + name + ' control is not wired through press');
+  });
+  return 'touch -> pointerdown -> act, then the deliberate close';
 });
 
 check('app: the first load carries no favicon round trip', () => {
@@ -1033,26 +1059,24 @@ check('app: the typing layout pins the app to the visible height and clears the 
   return 'a compact layout under a keyboard';
 });
 
-check('app: the phone drawer is one row with the work buttons beside the line', () => {
+check('app: the phone drawer is one row with the buttons inside the typing box', () => {
   const css = read(path.join(v1, 'css', 'app.css'));
   const app = read(path.join(v1, 'js', 'app.js'));
   const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
-  assert(/\.program\s*{[^}]*flex-direction:\s*row/.test(narrow), 'the drawer stacks its buttons under the line');
-  assert(/\.program\s*{[^}]*align-items:\s*flex-end/.test(narrow), 'the buttons drift to the middle of a drawer pulled taller');
-  assert(/\.program \.editor\s*{[^}]*align-self:\s*stretch/.test(narrow), 'the editor keeps its one-line height when the drawer grows');
-  assert(/\.program \.controls\s*{\s*display:\s*contents/.test(narrow), 'the control row stays one block under the line');
-  assert(/\.program \.controls-left\s*{\s*order:\s*1/.test(narrow), 'step and reset do not sit left of the line');
-  assert(/\.program \.editor\s*{[^}]*order:\s*2/.test(narrow), 'the line is not between the two groups');
-  assert(/\.program \.controls-right\s*{\s*order:\s*3/.test(narrow), 'the level arrows and run do not sit right of the line');
+  assert(/\.program\s*{[^}]*align-items:\s*stretch/.test(narrow), 'the box does not fill the drawer row');
+  assert(/\.program \.editor\s*{[^}]*flex:\s*1 1 auto/.test(narrow), 'the line does not take the whole row');
+  assert(!/\.program \.controls/.test(narrow), 'the old control row is still in the sheet');
   assert(/\.editor \{\s*grid-template-columns:\s*24px/.test(narrow), 'the gutter still takes a thumb of the line');
-  assert(/\.controls button \{\s*width:\s*28px/.test(narrow), 'the work buttons keep their desktop size on a phone');
-  assert(/\.controls \.icon-only \{\s*width:\s*28px/.test(narrow), 'the arrow buttons keep their wide width and squeeze the line');
+  assert(/\.program-tools\s*{[^}]*right:\s*4px/.test(narrow) && /\.program-tools\s*{[^}]*bottom:\s*4px/.test(narrow), 'the buttons left the bottom-right of the typing box');
+  assert(/\.tool\s*{\s*width:\s*28px/.test(narrow), 'the work buttons keep their desktop size on a phone');
+  assert(/\.tool\.icon-only\s*{\s*width:\s*28px/.test(narrow), 'the arrow buttons keep their wide width and squeeze the line');
+  assert(/\.stage-tools\s*{[^}]*top:\s*0/.test(narrow), 'the panel corners do not meet the panel edge on a phone');
   assert(/\.topbar\s*{\s*gap:\s*4px;\s*padding:\s*4px 8px/.test(narrow), 'the narrow bar is as tall as a work row');
   assert(/const ONE_LINE = 50;/.test(app) && /function drawerFloor\(\) \{ return isNarrow\(\) \? ONE_LINE : MIN_PROGRAM; \}/.test(app), 'the drawer cannot be pulled down to one line on a phone');
   assert(/setProgramHeight\(drawerDefault\(\)\)/.test(app), 'the phone drawer opens at the desktop height');
   assert(/\.splitter\s*{[^}]*background:\s*transparent/.test(narrow), 'the drag edge paints its own container above the input');
   assert(/\.splitter-grip\s*{[^}]*bottom:\s*-4px/.test(narrow), 'the grip floats in a band instead of straddling the input box');
-  return 'one line, step and reset left, arrows and run right, 35 px bar, grip on the box';
+  return 'one line, free left, buttons inside the box, grip on the box';
 });
 
 check('app: the controller reads the visible viewport and marks the screen as typing', () => {
@@ -1067,8 +1091,9 @@ check('app: the controller reads the visible viewport and marks the screen as ty
 
 check('app: the board is refitted to the room typing leaves, and a run hands the screen back', () => {
   const app = read(path.join(v1, 'js', 'app.js'));
-  assert(/heightRoom = el\.field\.clientHeight - roomY - \(typing \? 0 : 98\)/.test(app), 'the board still reserves the hidden verdict row while typing');
+  assert(/heightRoom = el\.field\.clientHeight - roomY - stagePad - \(typing \? 0 : 98\)/.test(app), 'the board still reserves the hidden verdict row while typing');
   assert(/parseFloat\(pad\.paddingTop\)/.test(app), 'the board is sized against a guessed field padding, not the one the sheet gives');
+  assert(/stagePad = Math\.round\(parseFloat\(host\.getComputedStyle\(el\.stage\)\.paddingTop\) \|\| 0\)/.test(app), 'the board ignores the strip the panel corners take from it');
   assert(/Math\.max\(typing \? 120 : 200,/.test(app), 'the board keeps its wide-screen floor while typing, and overflows the drawer');
   assert(/el\.program\.style\.height = ''/.test(app), 'the dragged drawer height outranks the typing layout');
   assert(/function closeKeyboard\(\)[\s\S]{0,80}el\.code\.blur\(\)/.test(app), 'a run does not close the keyboard');
