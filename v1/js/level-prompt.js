@@ -114,6 +114,14 @@
     const caps = limits(h);
     if (caps.length) blocks.push(['Keep within these limits:', ...caps].join('\n'));
 
+    blocks.push([
+      'A pack may hand over fewer words than the full set (for example, leaving out "u-turn"),',
+      'so the player has to solve the same board with fewer tools. It may also carry a "rules" object',
+      'such as { "fuel": 12 } that limits how many steps the drone takes before it stalls.',
+      'If you withhold a word, every level in the pack must be solvable without it, and any trap that',
+      'names the withheld word is refused by the game.'
+    ].join('\n'));
+
     const level = target.levels[0];
     const fields = level ? Object.keys(level).join(', ') : '';
     blocks.push([
@@ -125,7 +133,8 @@
       'pads and crates are [x, y] pairs on floor cells, never on the same cell.',
       'budget is the most lines a winning program may use, and it must be beatable inside it.',
       'teaches and title are short strings that say what the level teaches.',
-      'Add a field named proof holding a program you have checked wins the level inside its budget.'
+      'Add a field named proof holding a program you have checked wins the level inside its budget.',
+      'Add a field named traps: an array of programs a learner might wrongly try, each of which must lose inside its budget. At least one per level.'
     ].join('\n'));
 
     blocks.push(['Here is one real level to copy the shape of:', exampleJson(h)].join('\n'));
