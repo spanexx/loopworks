@@ -13,8 +13,11 @@
   // WHY: one entry per level, keyed by the level id, valued by the exact text the player would type.
   //      The checks solve the level with it; a line here that does not fit the Budget is a red check.
   const LoopworksSolutions = {
+    'polish-1': 'forward 2\nturn right\nforward 2',
     'depot-1': 'forward 2\nturn right\nforward 2',
+    'polish-3': 'turn left\ngrab\nturn right\nturn right\ndrop\nturn right\nforward 1\nturn left\ngrab\nturn right\nturn right\ndrop',
     'depot-2': 'turn left\ngrab\nturn right\nturn right\ndrop\nturn right\nforward 1\nturn left\ngrab\nturn right\nturn right\ndrop',
+    'polish-2': 'repeat 4\n  forward 3\n  turn right\nend',
     'depot-3': 'repeat 4\n  forward 3\n  turn right\nend',
     'depot-4': 'repeat 10\n  if wall ahead: turn right\n  forward 1\nend',
     'depot-5': 'forward 6\nturn right\nforward 4',
