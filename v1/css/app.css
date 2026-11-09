@@ -652,22 +652,9 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   background: var(--panel);
 }
 
-.program-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed var(--edge-strong);
-  font: 9px var(--mono);
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.program-head .count { color: var(--amber-ink); letter-spacing: .08em; }
-
 .editor {
   position: relative;
+  isolation: isolate;
   flex: 1;
   min-height: 0;
   display: grid;
@@ -675,6 +662,38 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   margin: 8px 0 6px;
   border: 1px solid var(--edge);
   background: var(--bg);
+}
+
+/* WHY: the drawer holds the lines being typed and nothing else (input-area PRD-TRD 1, GRILL 6). The
+   word the old label bar carried now sits inside the box as decoration: a faint wallpaper behind the
+   line, silent to a screen reader and transparent to a press. `isolation` keeps its negative layer
+   above the box's own background so it stays visible instead of slipping behind the editor. */
+.editor-wallpaper {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  z-index: -1;
+  transform: translateY(-50%);
+  font: 12px var(--mono);
+  letter-spacing: .4em;
+  text-transform: uppercase;
+  color: var(--ink);
+  opacity: .07;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* WHY: the count keeps the corner it had, without the bar that used to hold it. It is read, not
+   pressed, so it takes no press either. */
+.editor-count {
+  position: absolute;
+  top: 2px;
+  right: 10px;
+  z-index: 1;
+  font: 9px var(--mono);
+  letter-spacing: .08em;
+  color: var(--faint);
+  pointer-events: none;
 }
 
 .gutter {
@@ -1216,7 +1235,8 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   .run-icon,
   .run-icon svg { width: 15px; height: 15px; }
 
-  .program-head,
+  .editor-wallpaper,
+  .editor-count,
   .hint { display: none; }
 
   /* WHY: the edge is the input's own grab tab, not a band of its own. A strip with borders and a

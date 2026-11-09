@@ -1079,6 +1079,28 @@ check('app: the phone drawer is one row with the buttons inside the typing box',
   return 'one line, free left, buttons inside the box, grip on the box';
 });
 
+// WHY: the learner asked for the program label bar to go and for the word to live inside the box as
+//      a subtle wallpaper (docs/features/loopworks-input-area, GRILL 7). The PRD says the box keeps
+//      only the lines being typed, so a bar above it is chrome the drawer should not carry; the word
+//      and the line count stay, both inside the editor, and the phone row is left alone.
+check('app: the program label is a wallpaper inside the editor, not a bar above it', () => {
+  const page = read(path.join(v1, 'index.html'));
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+  const editorBox = page.slice(page.indexOf('class="editor"'), page.indexOf('class="hint"'));
+  assert(!/class="program-head"/.test(page), 'the label bar is still above the typing box');
+  assert(/class="editor-wallpaper"[^>]*aria-hidden="true"[^>]*>Program</.test(editorBox), 'the word Program is not a decorative wallpaper inside the editor');
+  assert(/id="line-count"/.test(editorBox), 'the line count left the editor with the bar');
+  assert(/\.editor-wallpaper\s*{[^}]*position:\s*absolute/.test(css), 'the wallpaper is not a layer inside the box');
+  assert(/\.editor-wallpaper\s*{[^}]*pointer-events:\s*none/.test(css), 'the wallpaper can eat a press meant for the line');
+  const rule = css.match(/\.editor-wallpaper\s*{([^}]*)}/);
+  const opacity = rule && rule[1].match(/opacity:\s*([0-9.]+)/);
+  assert(opacity && Number(opacity[1]) <= 0.1, 'the wallpaper is not subtle enough to sit behind the line');
+  assert(/\.editor-wallpaper[^{]*{[^}]*display:\s*none/.test(narrow), 'the wallpaper crowds the one-row phone drawer');
+  assert(/\.editor-count[^{]*{[^}]*display:\s*none/.test(narrow), 'the line count crowds the one-row phone drawer');
+  return 'no bar, the word is a faint wallpaper, the count lives in the box';
+});
+
 check('app: the controller reads the visible viewport and marks the screen as typing', () => {
   const app = read(path.join(v1, 'js', 'app.js'));
   assert(/host\.visualViewport/.test(app), 'nothing measures the visible height');
