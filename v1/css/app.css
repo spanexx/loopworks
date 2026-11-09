@@ -610,24 +610,28 @@ body.is-evidence .goal-top { display: none; }
 
 /* ---------------------------------------------------------------- the drawer edge */
 
+/* WHY: the edge is the input's grab tab, not a band of its own. The learner asked twice for the
+   container around it to go and kept the phone's "tiny line in the middle ... to show that user can
+   drag it" as the whole mark (GRILL 6, docs/drift.md D-22). So the edge keeps its 9 px of hit area,
+   its row-resize cursor and its keyboard focus, and paints nothing: the grip on the seam is the only
+   thing the eye gets. */
 .splitter {
   position: relative;
   flex: none;
   height: 9px;
   cursor: row-resize;
-  background: var(--panel);
-  border-top: 1px solid var(--edge);
-  border-bottom: 1px solid var(--edge);
+  background: transparent;
+  border: 0;
   touch-action: none;
 }
 
 .splitter-grip {
   position: absolute;
-  top: 50%;
+  bottom: 0;
   left: 50%;
   width: 44px;
   height: 2px;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   border-radius: 1px;
   background: var(--grip);
 }
@@ -1259,6 +1263,9 @@ body.is-dragging { cursor: row-resize; user-select: none; }
     bottom: -4px;
     width: 40px;
     height: 3px;
+    /* WHY: the base rule centres the grip with translateX alone now; the phone's 3 px line keeps the
+       vertical half-shift it has always had, so its look does not move with this change (GRILL 6). */
+    transform: translate(-50%, -50%);
     border-radius: 2px;
   }
 
