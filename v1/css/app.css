@@ -345,12 +345,14 @@ body.is-evidence .goal-top { display: none; }
    sized down by the room above the drawer and stays centred, which stops a short board from
    squeezing the verdict into an ellipsis. */
 .stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
   width: min(100%, 480px);
   max-width: 100%;
   margin: auto;
+  padding-top: 38px;
 }
 
 .board {
@@ -716,12 +718,28 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   color: var(--muted);
 }
 
-.controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+/* WHY: the corners of the drone panel. Step and Reset act on the world the board shows, so they sit
+   against the panel's own top edges - left and right - and stay there whatever the board's size. */
+.stage-tools { position: absolute; top: 0; display: flex; gap: 6px; }
 
-.controls-left,
-.controls-right { display: flex; align-items: center; gap: 8px; }
+.stage-tools.left { left: 0; }
 
-.controls button {
+.stage-tools.right { right: 0; }
+
+/* WHY: Run and the level arrows belong to the typing box and are pinned inside its bottom-right
+   corner, so pulling the drawer taller grows the lines and never slides the buttons away. The
+   overlay outranks the candidate list: a full list must never eat the Run tap the player aimed at. */
+.program-tools {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -736,13 +754,14 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   letter-spacing: .1em;
   text-transform: uppercase;
   box-shadow: 0 2px 0 var(--btn-shadow);
+  touch-action: manipulation;
 }
 
-.controls button:active { transform: translateY(1px); box-shadow: none; }
+.tool:active { transform: translateY(1px); box-shadow: none; }
 
-.controls svg { width: 13px; height: 13px; }
+.tool svg { width: 13px; height: 13px; }
 
-.controls .primary {
+.program-tools .primary {
   flex: none;
   width: 52px;
   min-height: 40px;
@@ -757,9 +776,9 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
 .run-icon svg { display: block; width: 18px; height: 18px; }
 
-.controls .icon-only { flex: none; width: 44px; padding: 0; color: var(--muted); }
+.tool.icon-only { flex: none; width: 44px; padding: 0; color: var(--muted); }
 
-.controls .quiet { background: transparent; box-shadow: none; }
+.tool.quiet { background: transparent; box-shadow: none; }
 
 /* ---------------------------------------------------------------- completion */
 
@@ -1151,51 +1170,48 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
   .field { min-height: 320px; padding: 16px 14px; }
 
-  /* WHY: the drawer on a phone is one row. Step and reset sit left of the line being typed, the
-     level arrows and run sit right of it, and the head, the hint and a whole button row go away -
-     a program is "forward" or "turn left", so the box it needs is one line, and every pixel the
-     two-row drawer spent on chrome is paid back to the panel. The edge above it stays draggable,
-     so a longer program can be read by pulling the row taller - and because the buttons sit on the
-     bottom edge, that pull grows the box upward into the panel and leaves every verb exactly where
-     the thumb already is. */
+  /* WHY: the drawer on a phone is one row. A program is "forward" or "turn left", so the box it
+     needs is one line, and every pixel the two-row drawer spent on chrome is paid back to the
+     panel. The edge above it stays draggable, so a longer program can be read by pulling the row
+     taller - and because the buttons sit on the bottom edge, that pull grows the box upward into
+     the panel and leaves every verb exactly where the thumb already is. */
+  /* WHY: the row is the typed line and nothing else - Step and Reset went to the panel's corners and
+     Run and the arrows sit inside the box - so the line keeps the width the thumb needs. */
   .program {
     flex-direction: row;
-    align-items: flex-end;
-    gap: 4px;
+    align-items: stretch;
+    gap: 0;
     height: auto;
     min-height: 0;
     padding: 0 8px 8px;
   }
 
-  .program .controls { display: contents; }
-
-  .program .controls-left { order: 1; }
-
   .program .editor {
-    order: 2;
     flex: 1 1 auto;
-    align-self: stretch;
     min-width: 0;
     min-height: 42px;
     margin: 0;
   }
 
-  .program .controls-right { order: 3; }
-
-  .controls-left,
-  .controls-right { flex: none; align-items: center; gap: 4px; }
-
   .editor { grid-template-columns: 24px minmax(0, 1fr); }
 
   .gutter { padding: 8px 5px 8px 0; }
 
-  .controls button { width: 28px; min-height: 28px; padding: 0; }
+  /* WHY: 4 px of inset inside a 42 px box leaves the line 34 px of clear height to read through
+     while the keyboard is up, and keeps every button inside the box it belongs to. */
+  .program-tools { right: 4px; bottom: 4px; gap: 4px; }
 
-  .controls .icon-only { width: 28px; }
+  .stage { padding-top: 34px; }
 
-  .controls svg { width: 12px; height: 12px; }
+  .stage-tools { top: 0; gap: 4px; }
 
-  .controls .primary { width: 32px; min-height: 32px; }
+  .tool { width: 28px; min-height: 28px; padding: 0; }
+
+  .tool.icon-only { width: 28px; }
+
+  .tool svg { width: 12px; height: 12px; }
+
+  .program-tools .primary { width: 32px; min-height: 32px; }
 
   .run-icon,
   .run-icon svg { width: 15px; height: 15px; }
@@ -1225,9 +1241,9 @@ body.is-dragging { cursor: row-resize; user-select: none; }
      user sees, and that window slid down to the editor and left the board behind. While the editor
      holds focus the app takes the height that is actually visible: the verdict and the trace step
      aside (the sound and the status line still say what happened) and the board is refitted to what
-     is left, so the panel and the line being typed share one screen. The row of buttons beside that
-     line stays put - they are the work, not chrome. `--app-visible` is written by the controller;
-     100dvh is the fallback on a browser that resizes the layout itself. */
+     is left, so the panel and the line being typed share one screen. Run and the level arrows stay
+     inside that line's box - they are the work, not chrome. `--app-visible` is written by the
+     controller; 100dvh is the fallback on a browser that resizes the layout itself. */
   body.is-typing { overflow: hidden; }
 
   body.is-typing .app {
