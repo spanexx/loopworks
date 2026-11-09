@@ -13,10 +13,15 @@
     blurb: 'A drone, a shelf of crates, and a floor marked for delivery. Nothing here needs a map — the drone can only ever ask what is in front of it.',
     // WHY: this pack hands the player every word the engine knows. A later pack can hand over
     //      fewer, which is how a level can be made harder by vocabulary instead of by size.
-    verbs: ['forward', 'turn left', 'turn right', 'grab', 'drop'],
+    // 2026-11-08 qoder-agent: `u-turn` joined the list with the sixth verb. Withholding it is a hard
+    //      tier decision (docs/features/loopworks-u-turn-verb/PRD-TRD-loopworks-u-turn-verb.md, PRD 5).
+    verbs: ['forward', 'turn left', 'turn right', 'grab', 'drop', 'u-turn'],
     sensors: ['wall ahead', 'clear ahead', 'crate ahead', 'pad ahead'],
     rules: {},
 
+    // WHY: every level names the plausible wrong programs it refuses, in the same text a player types.
+    //      These are read by the harness and never by the engine - a trap that wins inside the Budget
+    //      turns the shelf red, which is the difficulty instrument landing (`loopworks-difficulty-instrument`).
     levels: [
       {
         id: 'depot-1',
@@ -37,7 +42,8 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[3, 3]],
-        crates: []
+        crates: [],
+        traps: ['forward 3']
       },
       {
         id: 'depot-2',
@@ -58,7 +64,8 @@
         ],
         start: { x: 2, y: 2, dir: 'E' },
         pads: [[1, 1], [2, 3]],
-        crates: [[2, 1], [1, 3]]
+        crates: [[2, 1], [1, 3]],
+        traps: ['turn left\ngrab\nturn right\nturn right\nforward 2\ndrop\nturn right\nturn right\nforward 1\ngrab\nturn right\nturn right\nforward 2\ndrop']
       },
       {
         id: 'depot-3',
@@ -80,7 +87,8 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[3, 1], [4, 3], [2, 4], [1, 2]],
-        crates: []
+        crates: [],
+        traps: ['forward 3\nturn right\nforward 3\nturn right\nforward 3\nturn right\nforward 3\nturn right']
       },
       {
         id: 'depot-4',
@@ -104,7 +112,8 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[2, 1], [4, 2], [3, 3], [1, 2]],
-        crates: []
+        crates: [],
+        traps: ['repeat 2\n  forward 3\n  turn right\n  forward 2\n  turn right\nend']
       },
       {
         id: 'depot-5',
@@ -130,7 +139,8 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[3, 1], [7, 1], [7, 3], [7, 5]],
-        crates: []
+        crates: [],
+        traps: ['forward 1\nforward 1\nforward 1\nforward 1\nforward 1\nforward 1\nturn right\nforward 1\nforward 1\nforward 1\nforward 1']
       },
       {
         id: 'depot-6',
@@ -153,7 +163,8 @@
         ],
         start: { x: 1, y: 2, dir: 'E' },
         pads: [[3, 3], [5, 3], [7, 3]],
-        crates: [[2, 1], [4, 1], [6, 1]]
+        crates: [[2, 1], [4, 1], [6, 1]],
+        traps: ['forward 1\nturn left\ngrab\nturn right\nforward 1\nturn right\ndrop\nturn left\nforward 1\nturn left\ngrab\nturn right\nforward 1\nturn right\ndrop\nturn left\nforward 1\nturn left\ngrab\nturn right\nforward 1\nturn right\ndrop']
       },
       {
         id: 'depot-7',
@@ -179,7 +190,8 @@
         ],
         start: { x: 2, y: 5, dir: 'E' },
         pads: [[2, 2], [4, 2], [6, 2], [8, 2]],
-        crates: []
+        crates: [],
+        traps: ['turn left\nforward 3\nturn left\nturn left\nforward 3\nturn left\nforward 2\nturn left\nforward 3\nturn left\nturn left\nforward 3\nturn left\nforward 2\nturn left\nforward 3\nturn left\nturn left\nforward 3\nturn left\nforward 2\nturn left\nforward 3\nturn left\nturn left\nforward 3\nturn left\nforward 2']
       },
       {
         id: 'depot-8',
@@ -203,7 +215,8 @@
         ],
         start: { x: 2, y: 2, dir: 'N' },
         pads: [[3, 2], [1, 2]],
-        crates: [[2, 1], [2, 3]]
+        crates: [[2, 1], [2, 3]],
+        traps: ['grab\nturn right\ndrop\nturn right\ngrab\nturn right\ndrop']
       },
       {
         id: 'depot-9',
@@ -228,7 +241,11 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[4, 1], [6, 3], [3, 4], [1, 2]],
-        crates: []
+        crates: [],
+        traps: [
+          'repeat 20\n  forward 2\n  turn right\nend',
+          'repeat 2\n  forward 5\n  turn right\n  forward 3\n  turn right\nend'
+        ]
       }
     ]
   };

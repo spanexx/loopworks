@@ -14,7 +14,9 @@
   //      direction and "right" is +1. Turning twice is a U-turn, which the player uses a lot.
   const TURN_STEP = { left: -1, right: 1 };
 
-  const VERBS = ['forward', 'turn left', 'turn right', 'grab', 'drop'];
+  // 2026-11-08 qoder-agent: the sixth verb is `u-turn`, locked in
+  //      docs/features/loopworks-u-turn-verb. It is the only hyphenated word the player types.
+  const VERBS = ['forward', 'turn left', 'turn right', 'grab', 'drop', 'u-turn'];
   // WHY: a sensor only ever asks about the one cell the drone faces. That is the whole rule of
   //      the guard, and it is why no sensor needs a coordinate.
   const SENSORS = ['wall ahead', 'clear ahead', 'crate ahead', 'pad ahead'];
@@ -29,28 +31,36 @@
     return m[0].replace(/\t/g, '  ').length;
   }
 
-  // WHY: one action, no block. Returns null when the words are not a verb the engine knows,
+  // WHY: one action, no block. Returns null when the words are not a verb this pack hands over,
   //      and the caller turns that into an error that names the line.
-  function readAction(body, lineNo, errors) {
+  function readAction(body, lineNo, errors, verbs) {
     const words = body.trim().toLowerCase();
-    if (/^forward( \d+)?$/.test(words)) {
+    const shape = shapeOf(words);
+    // WHY: a word can fail two ways - the language has never heard it, or this level is keeping it
+    //      back. The two refusals teach different things, so they have to read differently.
+    if (shape === null || verbs.indexOf(shape) === -1) {
+      const list = shape ? `The words here are ${verbs.join(', ')}.` : `The words are ${VERBS.join(', ')}.`;
+      const said = shape ? `"${shape}" is not a word this level gives you.` : `"${words}" is not something the drone can do.`;
+      errors.push({ line: lineNo, message: `line ${lineNo}: ${said} ${list}` });
+      return null;
+    }
+    if (shape === 'forward') {
       const parts = words.split(' ');
       return { kind: 'action', verb: 'forward', amount: parts.length === 2 ? Number(parts[1]) : 1, line: lineNo };
     }
-    if (/^turn (left|right)$/.test(words)) {
-      return { kind: 'action', verb: 'turn', side: words.split(' ')[1], line: lineNo };
+    if (/^turn /.test(shape)) {
+      return { kind: 'action', verb: 'turn', side: shape.split(' ')[1], line: lineNo };
     }
-    if (words === 'grab' || words === 'drop') {
-      return { kind: 'action', verb: words, line: lineNo };
-    }
-    errors.push({ line: lineNo, message: `line ${lineNo}: "${words}" is not something the drone can do. The words are ${VERBS.join(', ')}.` });
-    return null;
+    return { kind: 'action', verb: shape, line: lineNo };
   }
 
   // WHY: parse is line-based with indentation for blocks, because that is the shape a player
   //      can type without a cursor fight. It reports every problem with its line number so the
   //      trace can point at the source instead of describing an abstraction.
-  function parse(source) {
+  function parse(source, pack) {
+    // WHY: the pack decides which words may run, not only which words the autocomplete offers. No
+    //      pack argument means the whole language, which is what the bare parser always did.
+    const open = unlocked(pack);
     const errors = [];
     const root = { list: [], indent: -1 };
     const stack = [root];
@@ -103,11 +113,15 @@
           return;
         }
         const asked = text.slice(3, colon).trim().toLowerCase();
-        if (SENSORS.indexOf(asked) === -1) {
-          errors.push({ line: lineNo, message: `line ${lineNo}: the drone cannot ask "${asked}". It can ask ${SENSORS.join(', ')}.` });
+        // WHY: the same two-way refusal as a verb. A sensor the drone has never had is a different
+        //      mistake from a sensor this level kept back, and the player cannot fix either blindly.
+        if (SENSORS.indexOf(asked) === -1 || open.sensors.indexOf(asked) === -1) {
+          const known = SENSORS.indexOf(asked) >= 0;
+          const said = known ? `"${asked}" is not a question this level gives you.` : `the drone cannot ask "${asked}".`;
+          errors.push({ line: lineNo, message: `line ${lineNo}: ${said} It can ask ${known ? open.sensors.join(', ') : SENSORS.join(', ')}.` });
           return;
         }
-        const inner = readAction(text.slice(colon + 1), lineNo, errors);
+        const inner = readAction(text.slice(colon + 1), lineNo, errors, open.verbs);
         if (inner) top.list.push({ kind: 'guard', sensor: asked, action: inner, line: lineNo });
         return;
       }
@@ -117,7 +131,7 @@
         return;
       }
 
-      const action = readAction(text, lineNo, errors);
+      const action = readAction(text, lineNo, errors, open.verbs);
       if (action) top.list.push(action);
     });
 
@@ -151,6 +165,11 @@
     });
     if (pack.rules && pack.rules.fuel !== undefined && !(Number.isInteger(pack.rules.fuel) && pack.rules.fuel > 0)) {
       packError(errors, id, 'its fuel rule has to be a positive whole number');
+    }
+    // WHY: the door obeys the pack's list now, so a pack that hands over no verb at all would refuse
+    //      every line a player types. That is an authoring mistake, and it is worth naming as one.
+    if (Array.isArray(pack.verbs) && unlocked(pack).verbs.length === 0) {
+      packError(errors, id, 'unlocks no verb the engine knows, so nothing a player types could run');
     }
 
     pack.levels.forEach((level) => {
@@ -273,8 +292,8 @@
 
   // ---------------------------------------------------------------- running one instruction
 
-  // WHY: one statement, one tick. A "forward 3" costs three ticks, so the animation and the
-  //      fuel cost and the step count all agree on what a move is.
+  // WHY: one line, one tick. A "forward 3" is one line, so it is one tick and one unit of the
+  //      Budget; the cells it walks are distance, not time, and the fuel rule counts those.
   function stepOnce(vm) {
     let st = nextStatement(vm);
     if (st === null) return { done: true, status: 'stuck', reason: 'program ended' };
@@ -296,8 +315,8 @@
     }
 
     if (st.verb === 'forward') {
-      // WHY: a forward with an amount still walks one cell at a time, because a bump has to
-      //      land on the tick that caused it and not on the line that started the walk.
+      // WHY: a forward with an amount still walks one cell at a time inside its single tick, so a
+      //      bump stops at the cell that caused it and the trace says how far the drone actually got.
       const steps = st.amount || 1;
       for (let i = 0; i < steps; i += 1) {
         if (world.fuelLeft !== null && world.fuelLeft <= 0) {
@@ -329,6 +348,16 @@
       const turnValue = (MOVES[world.drone.dir] + TURN_STEP[st.side] + 4) % 4;
       world.drone.dir = Object.keys(MOVES)[turnValue];
       event.action = 'turn';
+      event.note = `facing ${world.drone.dir}`;
+      return commit(vm, event, st.line);
+    }
+
+    if (st.verb === 'u-turn') {
+      // WHY: a reversal is two quarter turns facing the same way, done in one line, so it uses the
+      //      same clock as a turn rather than a kind of move of its own.
+      const turnValue = (MOVES[world.drone.dir] + 2) % 4;
+      world.drone.dir = Object.keys(MOVES)[turnValue];
+      event.action = 'u-turn';
       event.note = `facing ${world.drone.dir}`;
       return commit(vm, event, st.line);
     }
@@ -402,7 +431,7 @@
 
   function machine(pack, levelId, source) {
     const level = (pack.levels || []).find((l) => l.id === levelId);
-    const parsed = parse(source);
+    const parsed = parse(source, pack);
     if (!level) return deadMachine(`this pack has no level "${levelId}"`);
     if (!parsed.ok) return deadMachine(parsed.errors.map((e) => e.message).join(' '), parsed.lineCount);
 
@@ -480,8 +509,7 @@
   //      indent or a typed prefix survives the completion.
   function suggest(pack, line) {
     const text = String(line == null ? '' : line);
-    const verbs = (pack && pack.verbs ? pack.verbs : VERBS).filter((v) => VERBS.indexOf(v) >= 0);
-    const sensors = (pack && pack.sensors ? pack.sensors : SENSORS).filter((s) => SENSORS.indexOf(s) >= 0);
+    const { verbs, sensors } = unlocked(pack);
 
     const colon = text.indexOf(':');
     const guarded = colon >= 0 && /^if\b/i.test(text.slice(0, colon).trim());
@@ -524,6 +552,27 @@
     },
     verbs: VERBS.slice(), sensors: SENSORS.slice(), rules: RULES.slice(), cap: CAP
   };
+
+  // ---------------------------------------------------------------- what a pack hands over
+
+  // WHY: a pack chooses from the engine's words; it cannot add one. The filter is what keeps a typo
+  //      in a pack file to a narrower list instead of a word nothing can run - validatePack is the
+  //      author's first opinion, and this is the door every run goes through.
+  function unlocked(pack) {
+    return {
+      verbs: (pack && pack.verbs ? pack.verbs : VERBS).filter((v) => VERBS.indexOf(v) >= 0),
+      sensors: (pack && pack.sensors ? pack.sensors : SENSORS).filter((s) => SENSORS.indexOf(s) >= 0)
+    };
+  }
+
+  // WHY: the shape is matched before the pack's list is consulted, so a withheld word can be named
+  //      exactly instead of reported as a word the language has never had.
+  function shapeOf(words) {
+    if (/^forward( \d+)?$/.test(words)) return 'forward';
+    if (/^turn (left|right)$/.test(words)) return words;
+    if (words === 'grab' || words === 'drop' || words === 'u-turn') return words;
+    return null;
+  }
 
   // WHY: one global, readable from a browser page and from the node vm that tools/verify.mjs
   //      builds - the same file has to serve both, because file:// will not load a module.

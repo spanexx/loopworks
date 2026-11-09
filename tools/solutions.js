@@ -28,7 +28,10 @@
     'night-4': 'forward 1\nturn left\nturn left\nforward 1\nturn right\nforward 2\nturn left\nturn left\nforward 8',
     'night-5': 'forward 7\ngrab\nturn left\nturn left\nforward 4\ndrop',
     'night-6': 'repeat 3\n  forward 3\n  turn left\n  grab\n  turn left\n  turn left\n  drop\n  turn left\nend',
-    'night-7': 'repeat 8\n  turn left\n  if crate ahead: grab\n  turn left\n  turn left\n  if pad ahead: drop\n  turn left\n  forward 1\nend'
+    'night-7': 'repeat 8\n  turn left\n  if crate ahead: grab\n  turn left\n  turn left\n  if pad ahead: drop\n  turn left\n  forward 1\nend',
+    'night-8': 'forward 1\nturn left\ngrab\nturn right\nforward 3\ndrop\nturn left\nturn left\nforward 2\nturn right\ngrab\nturn right\ndrop',
+    'night-9': 'forward 6\ngrab\nturn left\nturn left\nforward 3\ndrop',
+    'night-10': 'forward 1\nturn left\ngrab\nturn right\nforward 6\ndrop\nturn left\nturn left\nforward 5\nturn right\ngrab\nturn right\ndrop'
   };
 
   host.LoopworksSolutions = LoopworksSolutions;

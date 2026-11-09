@@ -280,7 +280,7 @@ check('app: a pack that does not unlock a word never has it offered', () => {
 check('app: every verb candidate parses on its own', () => {
   const depot = findPack('depot');
   const verbs = L.suggest(depot, '').items.filter((item) => !item.endsWith(': ') && item.trim() !== 'repeat' && item.trim() !== 'end');
-  assert(verbs.length >= 5, `expected the five verbs, found ${verbs.length}`);
+  assert(verbs.length >= 6, `expected the six verbs, found ${verbs.length}`);
   verbs.forEach((verb) => assert(L.parse(verb).ok, `"${verb}" does not parse`));
   return `${verbs.length} verbs parse`;
 });
@@ -295,7 +295,7 @@ check('app: every offered word carries a description', () => {
       seen.add(word);
     });
   });
-  assert(seen.size === 11, `expected eleven words, found ${seen.size}`);
+  assert(seen.size === 12, `expected twelve words, found ${seen.size}`);
   return `${seen.size} words described`;
 });
 
