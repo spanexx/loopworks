@@ -338,7 +338,7 @@ check('app: the page loads the theme first, then the rules, every pack on disk, 
   assert(scripts.indexOf('js/user-packs.js') < scripts.indexOf('js/app.js'), 'an added pack has to be registered before the controller reads the shelf');
 
   // WHY: the ramp has to be on the root before the sheet paints, or the first frame flashes the other theme.
-  assert(page.indexOf('src="js/theme.js"') < page.indexOf('href="css/app.css"'), 'the theme script runs after the stylesheet');
+  assert(page.indexOf('src="js/theme.js"') < page.indexOf('href="css/app.css'), 'the theme script runs after the stylesheet');
   return scripts.join(' -> ');
 });
 
@@ -511,7 +511,7 @@ check('app: the worker installs, takes over, and serves the app when the network
   worker.stores.set('an-old-scheme', new Map([['https://example.test/v1/old.js', 'old']]));
   await worker.signal('activate');
   assert(worker.calls.deleted.includes('an-old-scheme'), 'activate kept a cache from an older scheme');
-  assert(!worker.calls.deleted.includes('loopworks-v1'), 'activate deleted the cache it is meant to keep');
+  assert(!worker.calls.deleted.includes('loopworks-v1-r2'), 'activate deleted the cache it is meant to keep');
   assert(worker.calls.claimed === 1, 'activate did not claim the open page');
 
   const page = { method: 'GET', mode: 'navigate', url: 'https://example.test/v1/index.html' };
@@ -523,6 +523,18 @@ check('app: the worker installs, takes over, and serves the app when the network
   const assetUrl = 'https://example.test/v1/js/app.js';
   const cold = await worker.ask({ method: 'GET', mode: 'cors', url: assetUrl });
   assert(cold && cold.body === `network:${assetUrl}`, 'an asset seen for the first time did not come from the network');
+  await worker.settle();
+
+  // WHY: a returning browser must not pin an old sheet under a fresh page. While the worker answered an
+  //      asset from the shelf first, the first open after a deploy could paint the new markup with the
+  //      previous stylesheet and break the layout (docs/drift.md D-20). The live network has to win;
+  //      the shelf is only the answer when the network is gone, which the offline checks below prove.
+  const staleUrl = 'https://example.test/v1/css/app.css?v=old-deploy';
+  const staleResponse = { ok: true, body: 'cached:old-sheet', clone() { return staleResponse; } };
+  worker.stores.get('loopworks-v1-r2').set(staleUrl, staleResponse);
+  const fresh = await worker.ask({ method: 'GET', mode: 'cors', url: staleUrl });
+  assert(fresh && fresh.body === `network:${staleUrl}`,
+    'a cached asset outranked the network, so a new page could be painted with an old sheet');
   await worker.settle();
 
   worker.goOffline();
@@ -540,6 +552,17 @@ check('app: the worker installs, takes over, and serves the app when the network
   const post = await worker.ask({ method: 'POST', mode: 'cors', url: 'https://example.test/v1/import' });
   assert(post === null, 'the worker answered a request that is not a read');
   return 'install, activate, page first, asset first, offline page, offline asset, pass-through';
+});
+
+// WHY: the one-time bridge out of the first worker. A browser that has not yet taken the new worker
+//      still holds the old sheet under the unversioned URL, and the first deploy after D-20 has to
+//      reach it on the next open without asking the learner to hard-refresh. New deploys do not bump
+//      this; the worker is network-first now, so the cache is only the offline answer.
+check('app: the sheet carries a version the old cache-first worker never saw', () => {
+  const page = read(path.join(v1, 'index.html'));
+  assert(/href="css\/app\.css\?v=[0-9][0-9-]*"/.test(page),
+    'the stylesheet URL is unversioned, so the old cache-first worker can answer it with the previous deploy');
+  return 'the sheet URL carries the one-time cache-buster';
 });
 
 check('app: the page registers the worker on http, and stays quiet on disk', () => {

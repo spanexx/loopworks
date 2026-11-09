@@ -19,7 +19,11 @@
   <meta name="apple-mobile-web-app-title" content="Loopworks">
   <!-- WHY: the theme runs before the sheet paints, so opening the app never flashes the other ramp. -->
   <script src="js/theme.js"></script>
-  <link rel="stylesheet" href="css/app.css">
+  <!-- WHY: this one query is a bridge out of the first worker, which served a cached sheet before the
+       network. A browser still running that worker has never seen this URL, so the next open after
+       D-20's deploy gets the new sheet instead of the one in its old cache. Later deploys do not bump
+       it: the worker asks the network first now, and the cache is only the offline answer. -->
+  <link rel="stylesheet" href="css/app.css?v=2026-11-09">
 </head>
 <body>
   <div class="app">
