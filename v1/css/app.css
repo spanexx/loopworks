@@ -648,7 +648,9 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 12px 20px 14px;
+  /* WHY: no band of panel above the box. The learner kept reading that strip as a container and asked
+     for it twice (docs/drift.md D-19, D-21); the editor's own border is the top of the drawer. */
+  padding: 0 20px 14px;
   background: var(--panel);
 }
 
@@ -659,7 +661,7 @@ body.is-dragging { cursor: row-resize; user-select: none; }
   min-height: 0;
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
-  margin: 8px 0 6px;
+  margin: 0 0 6px;
   border: 1px solid var(--edge);
   background: var(--bg);
 }
@@ -667,13 +669,16 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 /* WHY: the drawer holds the lines being typed and nothing else (input-area PRD-TRD 1, GRILL 6). The
    word the old label bar carried now sits inside the box as decoration: a faint wallpaper behind the
    line, silent to a screen reader and transparent to a press. `isolation` keeps its negative layer
-   above the box's own background so it stays visible instead of slipping behind the editor. */
+   above the box's own background so it stays visible instead of slipping behind the editor. It sits in
+   the middle of the writing surface, not against a corner, which is where the learner asked for it
+   (docs/drift.md D-21). */
 .editor-wallpaper {
   position: absolute;
   top: 50%;
-  right: 16px;
+  left: 50%;
+  right: auto;
   z-index: -1;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   font: 12px var(--mono);
   letter-spacing: .4em;
   text-transform: uppercase;
