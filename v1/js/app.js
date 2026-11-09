@@ -67,7 +67,10 @@
     runLabel: id('run-label'),
     step: id('step'),
     reset: id('reset'),
-    evidenceList: id('evidence-list')
+    evidenceList: id('evidence-list'),
+    evidenceSearch: id('evidence-search'),
+    evidenceNext: id('evidence-next'),
+    evidenceNextName: id('evidence-next-name')
   };
   const tabs = Array.prototype.slice.call(doc.querySelectorAll('.tab'));
 
@@ -802,6 +805,28 @@
 
   // ---------------------------------------------------------------- views
 
+  // WHY: the Evidence view is one list with two controls above it - the named next level and the
+  //      search box. Both are painted here, and the module only draws the list, so the record and
+  //      the controls cannot drift apart. The search value is passed in, which keeps the module
+  //      testable without a DOM event.
+  function renderEvidence() {
+    LoopworksEvidence.render(el.evidenceList, shelf, progress, pick,
+      el.evidenceSearch ? el.evidenceSearch.value : '');
+    paintEvidenceNext();
+  }
+
+  function paintEvidenceNext() {
+    const next = LoopworksEvidence.nextUnsolved(shelf, progress);
+    if (!next) {
+      el.evidenceNext.hidden = true;
+      return;
+    }
+    el.evidenceNext.hidden = false;
+    el.evidenceNext.dataset.pack = next.pack.id;
+    el.evidenceNext.dataset.level = next.level.id;
+    el.evidenceNextName.textContent = `${next.pack.name} · ${next.level.title}`;
+  }
+
   function showView(name) {
     const next = name === 'evidence' ? 'evidence' : 'work';
     if (view === 'work' && next === 'evidence') pause();
@@ -816,7 +841,7 @@
     });
     updateLevelNav();
     if (next === 'evidence') {
-      LoopworksEvidence.render(el.evidenceList, shelf, progress, pick);
+      renderEvidence();
     } else {
       fitBoard();
     }
@@ -902,6 +927,15 @@
   });
   press(el.prevLevel, () => stepLevel(-1));
   press(el.nextLevel, () => stepLevel(1));
+
+  // WHY: the search box narrows the list as it is typed, and the named next level opens that level
+  //      in Work. Both are view controls, so both are wired here rather than inside the module.
+  if (el.evidenceSearch) el.evidenceSearch.addEventListener('input', renderEvidence);
+  if (el.evidenceNext) {
+    el.evidenceNext.addEventListener('click', () => {
+      pick(el.evidenceNext.dataset.pack, el.evidenceNext.dataset.level);
+    });
+  }
 
   el.code.addEventListener('input', (event) => {
     if (quiet) return;
