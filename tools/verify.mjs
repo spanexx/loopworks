@@ -1167,6 +1167,43 @@ check('app: the wallpaper sits in the middle and the editor starts at the drawer
   return 'the word is centred, the box is the drawer top, the phone row is unchanged';
 });
 
+// WHY: the learner looked at the wide screen and said the band is not needed, that he still has to be
+//      able to drag the drawer, and that the phone's "tiny line in the middle ... to show that user can
+//      drag it" is enough (docs/drift.md D-22, GRILL 6). So the edge keeps its hit area and its cursor
+//      and paints nothing: one small grip on the seam is the whole mark, on both widths.
+check('app: the drawer edge is a bare grip on both widths, not a band', () => {
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+  const blockOf = (selector, source) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const found = source.match(new RegExp(`(?:^|\\n)[ \\t]*${escaped}[ \\t]*{([^}]*)}`, 'm'));
+    return found ? found[1] : '';
+  };
+  const declared = (block, name) => {
+    const found = block.match(new RegExp(`(?:^|;)\\s*${name}:\\s*([^;]+)`, 'm'));
+    return found ? found[1].trim() : '';
+  };
+
+  const splitter = blockOf('.splitter', css);
+  assert(declared(splitter, 'background') === 'transparent', 'the drag edge still paints a band above the box');
+  assert(/^(0|none)$/.test(declared(splitter, 'border')), 'the drag edge still draws its own frame');
+  assert(declared(splitter, 'height') === '9px', 'the drag edge lost the hit area a mouse can grab');
+  assert(declared(splitter, 'cursor') === 'row-resize', 'the drag edge no longer says it can be dragged');
+  assert(declared(splitter, 'touch-action') === 'none', 'the drag edge lets a touch scroll instead of resize');
+
+  const grip = blockOf('.splitter-grip', css);
+  assert(declared(grip, 'bottom') === '0', 'the grip floats away from the seam instead of marking it');
+  assert(/var\(--grip\)/.test(declared(grip, 'background')), 'the one mark on the seam is invisible');
+  assert(declared(grip, 'width') === '44px' && declared(grip, 'height') === '2px', 'the grip is not the small line the learner asked to keep');
+
+  const phoneSplitter = blockOf('.splitter', narrow);
+  const phoneGrip = blockOf('.splitter-grip', narrow);
+  assert(declared(phoneSplitter, 'background') === 'transparent', 'the phone edge grew a band back');
+  assert(/^(0|none)$/.test(declared(phoneSplitter, 'border')), 'the phone edge draws a frame again');
+  assert(declared(phoneGrip, 'bottom') === '-4px' && declared(phoneGrip, 'height') === '3px', 'the phone grip left the box it marks');
+  return 'no band on either width, a 9 px grab area, one grip on the seam';
+});
+
 check('app: the controller reads the visible viewport and marks the screen as typing', () => {
   const app = read(path.join(v1, 'js', 'app.js'));
   assert(/host\.visualViewport/.test(app), 'nothing measures the visible height');
