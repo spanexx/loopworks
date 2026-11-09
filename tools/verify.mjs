@@ -1124,6 +1124,49 @@ check('app: the program label is a wallpaper inside the editor, not a bar above 
   return 'no bar, the word is a faint wallpaper, the count lives in the box';
 });
 
+// WHY: the learner looked at the shipped drawer and said "the program wallpaper should be in the middle,
+//      also i still see a space at the top of the input that suggests a container, we do not need it"
+//      (docs/drift.md D-21). A band of panel above the box is the same chrome as the label bar he has
+//      removed twice: it holds nothing and still reads as a container. The editor's own top border has
+//      to be the drawer's top edge, and the word belongs behind the middle of the line, not its corner.
+check('app: the wallpaper sits in the middle and the editor starts at the drawer top', () => {
+  const css = read(path.join(v1, 'css', 'app.css'));
+  const narrow = css.slice(css.indexOf('@media (max-width: 900px)'));
+  const blockOf = (selector, source) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const found = source.match(new RegExp(`(?:^|\\n)[ \\t]*${escaped}[ \\t]*{([^}]*)}`, 'm'));
+    return found ? found[1] : '';
+  };
+  const declared = (block, name) => {
+    const found = block.match(new RegExp(`(?:^|;)\\s*${name}:\\s*([^;]+)`, 'm'));
+    return found ? found[1].trim() : '';
+  };
+  // WHY: the top side may be written as the first value of a shorthand or as its own longhand; both
+  //      mean the same thing to the box, so the check reads either instead of pinning one spelling.
+  const topOf = (block, kind) => {
+    const longhand = declared(block, `${kind}-top`);
+    const first = longhand || (declared(block, kind).split(/\s+/)[0] || '');
+    const value = parseFloat(first);
+    return Number.isFinite(value) ? value : null;
+  };
+
+  const wallpaper = blockOf('.editor-wallpaper', css);
+  assert(declared(wallpaper, 'left') === '50%', 'the wallpaper is not pulled to the middle of the box');
+  assert(/^translate\(-50%,\s*-50%\)$/.test(declared(wallpaper, 'transform')), 'the wallpaper is not centred on its own middle');
+  assert(!/px$/.test(declared(wallpaper, 'right')), 'a fixed right edge still pins the wallpaper to the corner');
+
+  const program = blockOf('.program', css);
+  const editor = blockOf('.editor', css);
+  assert(topOf(program, 'padding') === 0, 'the drawer keeps a band of padding above the editor, so it still reads as a container');
+  assert(topOf(editor, 'margin') === 0, 'the editor is pushed down from the drawer top, so the band survives');
+
+  const phoneProgram = blockOf('.program', narrow);
+  const phoneEditor = blockOf('.program .editor', narrow);
+  assert(topOf(phoneProgram, 'padding') === 0, 'the phone drawer grew a top gap');
+  assert(topOf(phoneEditor, 'margin') === 0, 'the phone box does not start at the drawer row top');
+  return 'the word is centred, the box is the drawer top, the phone row is unchanged';
+});
+
 check('app: the controller reads the visible viewport and marks the screen as typing', () => {
   const app = read(path.join(v1, 'js', 'app.js'));
   assert(/host\.visualViewport/.test(app), 'nothing measures the visible height');
