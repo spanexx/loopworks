@@ -1323,6 +1323,196 @@ check('app: Evidence prints a cost against a budget', () => {
   return 'lines/budget';
 });
 
+// WHY: a text check cannot tell a folded index from a flat list - both name lines and budget. The
+//      fold is proved by running evidence.js against a fake DOM and a synthetic shelf of 1,000
+//      packs, in the same vm + fake-host style as fakeSoundHost() above, so the gate stays
+//      dependency-free and runnable on plain node.
+function fakeElement(tag) {
+  const el = {
+    tagName: String(tag).toUpperCase(),
+    className: '',
+    dataset: {},
+    children: [],
+    attrs: new Map(),
+    listeners: new Map(),
+    _text: '',
+    _html: '',
+    set textContent(value) {
+      this._text = String(value);
+      if (value === '') this.children = [];
+    },
+    get textContent() { return this._text; },
+    set innerHTML(value) { this._html = String(value); },
+    get innerHTML() { return this._html; },
+    appendChild(child) { this.children.push(child); return child; },
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    },
+    setAttribute(name, value) { this.attrs.set(name, String(value)); },
+    getAttribute(name) { return this.attrs.has(name) ? this.attrs.get(name) : null; },
+    classList: {
+      add(...names) {
+        const parts = el.className ? el.className.split(/\s+/) : [];
+        names.forEach((name) => { if (!parts.includes(name)) parts.push(name); });
+        el.className = parts.join(' ');
+      }
+    },
+    closest(selector) {
+      let node = this;
+      while (node) {
+        if (selector === '[data-level]' && node.dataset && node.dataset.level) return node;
+        if (selector === '[data-pack-row]' && node.dataset && node.dataset.packRow) return node;
+        node = node.parent || null;
+      }
+      return null;
+    },
+    querySelector() { return null; }
+  };
+  return el;
+}
+
+function fakeEvidenceHost() {
+  const host = {
+    console,
+    document: { createElement(tag) { return fakeElement(tag); } },
+    localStorage: {
+      getItem() { return null; },
+      setItem() {}
+    }
+  };
+  host.globalThis = host;
+  host.window = host;
+  return host;
+}
+
+function syntheticShelf(packCount, levelsPerPack) {
+  const shelf = [];
+  for (let p = 0; p < packCount; p += 1) {
+    const levels = [];
+    for (let l = 0; l < levelsPerPack; l += 1) {
+      levels.push({ id: `pack-${p}-level-${l}`, title: `Level ${l + 1}`, budget: 4 });
+    }
+    shelf.push({ id: `pack-${p}`, name: `Pack ${p}`, levels });
+  }
+  return shelf;
+}
+
+function collectByClass(root, className) {
+  const found = [];
+  const walk = (node) => {
+    if (node.className && node.className.split(/\s+/).includes(className)) found.push(node);
+    (node.children || []).forEach(walk);
+  };
+  walk(root);
+  return found;
+}
+
+function collectText(root) {
+  const texts = [];
+  const walk = (node) => {
+    if (node._text) texts.push(node._text);
+    (node.children || []).forEach(walk);
+  };
+  walk(root);
+  return texts;
+}
+
+function fireClick(mount, target) {
+  const handlers = mount.listeners.get('click') || [];
+  handlers.forEach((fn) => fn({ target }));
+}
+
+check('app: the evidence view folds levels under their pack and never repeats the pack name', () => {
+  const host = fakeEvidenceHost();
+  vm.createContext(host);
+  runScript(host, path.join(v1, 'js', 'evidence.js'));
+  const evidence = host.LoopworksEvidence;
+  assert(evidence, 'evidence.js did not define the LoopworksEvidence global');
+  const shelf = syntheticShelf(1000, 10);
+  const mount = fakeElement('div');
+  const picked = [];
+  evidence.render(mount, shelf, {}, (packId, levelId) => picked.push([packId, levelId]), '');
+  const packRows = collectByClass(mount, 'evidence-pack');
+  let levelRows = collectByClass(mount, 'evidence-row');
+  assert(packRows.length === 1000, `expected 1,000 pack lines, drew ${packRows.length}`);
+  assert(levelRows.length === 0, `expected every pack closed by default, drew ${levelRows.length} level lines`);
+  const texts = collectText(mount);
+  const nameHits = texts.filter((text) => text === 'Pack 0').length;
+  assert(nameHits === 1, `pack name printed ${nameHits} times, expected once`);
+  // WHY: opening a pack is a click away, and the levels (with their pick callback) are built then.
+  fireClick(mount, packRows[0]);
+  levelRows = collectByClass(mount, 'evidence-row');
+  assert(levelRows.length === 10, `expected 10 level lines after opening one pack, drew ${levelRows.length}`);
+  const firstLevel = levelRows[0];
+  assert(firstLevel.dataset.pack === 'pack-0' && firstLevel.dataset.level === 'pack-0-level-0',
+    'a level row does not carry its pack and level');
+  fireClick(mount, firstLevel);
+  assert(picked.length === 1 && picked[0][0] === 'pack-0' && picked[0][1] === 'pack-0-level-0',
+    'a level click did not call back with its pack and level');
+  return '1,000 packs, closed by default, 10 level lines after open, name once, pick intact';
+});
+
+check('app: the evidence search narrows the list and opens the match', () => {
+  const host = fakeEvidenceHost();
+  vm.createContext(host);
+  runScript(host, path.join(v1, 'js', 'evidence.js'));
+  const evidence = host.LoopworksEvidence;
+  const shelf = syntheticShelf(1000, 10);
+  shelf[42].name = 'Łódź Market';
+  shelf[42].levels[3].title = 'Night Drop';
+
+  const mount = fakeElement('div');
+  evidence.render(mount, shelf, {}, () => {}, 'night drop');
+  let packRows = collectByClass(mount, 'evidence-pack');
+  let levelRows = collectByClass(mount, 'evidence-row');
+  assert(packRows.length === 1, `a level-title query drew ${packRows.length} pack lines, expected 1`);
+  assert(levelRows.length === 1 && levelRows[0].dataset.level === 'pack-42-level-3',
+    'a level-title query did not open its pack with only the matching level');
+
+  const mount2 = fakeElement('div');
+  evidence.render(mount2, shelf, {}, () => {}, 'lodz');
+  packRows = collectByClass(mount2, 'evidence-pack');
+  assert(packRows.length === 1, `an accent-folded query drew ${packRows.length} pack lines, expected 1`);
+
+  const mount3 = fakeElement('div');
+  evidence.render(mount3, shelf, {}, () => {}, 'no such pack anywhere');
+  const empty = collectByClass(mount3, 'evidence-empty');
+  assert(empty.length === 1, 'a query with no match drew no empty line');
+  assert(/No pack or level matches/.test(empty[0].textContent), 'the empty line does not say what happened');
+
+  const mount4 = fakeElement('div');
+  evidence.render(mount4, shelf, {}, () => {}, 'pack');
+  packRows = collectByClass(mount4, 'evidence-pack');
+  const more = collectByClass(mount4, 'evidence-more');
+  assert(packRows.length === 200, `a broad query drew ${packRows.length} pack lines, expected the 200 ceiling`);
+  assert(more.length === 1 && /keep typing/.test(more[0].textContent),
+    'a broad query did not say how many matched and ask for more letters');
+
+  const mount5 = fakeElement('div');
+  evidence.render(mount5, shelf, {}, () => {}, '');
+  packRows = collectByClass(mount5, 'evidence-pack');
+  assert(packRows.length === 1000, `an empty query drew ${packRows.length} pack lines, expected every pack`);
+  return 'level-title, accent, empty, ceiling and full browse';
+});
+
+check('app: the evidence view names the work to do and never a score', () => {
+  const page = read(path.join(v1, 'index.html'));
+  const evidence = read(path.join(v1, 'js', 'evidence.js'));
+  const css = read(path.join(v1, 'css', 'app.css'));
+  assert(/id="evidence-next"/.test(page), 'the Work to do line is missing from the Evidence view');
+  assert(/id="evidence-search"/.test(page), 'the search box is missing from the Evidence view');
+  assert(/for="evidence-search"/.test(page), 'the search box has no label');
+  assert(/Find a pack or a level/.test(page), 'the search box does not say what it finds');
+  assert(/evidence-pack/.test(css) && /content-visibility:\s*auto/.test(css),
+    'off-screen pack lines are not kept out of layout');
+  const spoken = evidence.replace(/\/\/[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  assert(!/percent|%|ratio|rank|score|stars|badge|bar\b/i.test(spoken),
+    'the evidence module speaks in scores');
+  assert(/levels/.test(evidence), 'a pack line does not say how many levels it holds');
+  return 'next line, search, no score';
+});
+
 // WHY: reading only the theme block keeps a stray root variable from hiding a missing ramp value.
 function themeBlock(css, theme) {
   const marker = `[data-theme="${theme}"]`;
