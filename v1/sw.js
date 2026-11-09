@@ -4,7 +4,7 @@
 // 2026-11-08 qoder-agent: written on the learner's direction, "turn into a pwa and make it
 //      installable", under delegated authority; the design notes are in the pack's PRD-TRD.
 
-const CACHE = 'loopworks-v1';
+const CACHE = 'loopworks-v1-r2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
@@ -39,15 +39,19 @@ async function freshPage(request) {
   }
 }
 
-// WHY: an asset is answered from the shelf at once and refreshed behind the player's back, so a
-//      second visit never waits on the network and a new build arrives without a cache bump.
+// WHY: an asset asks the network first for the same reason the page does. While this worker served the
+//      shelf first, the first open after a deploy paired a fresh page with the previous stylesheet and
+//      the input area broke (docs/drift.md D-20). The shelf is still the answer when the network is
+//      gone, so offline is kept; it just no longer wins over a live deploy.
 async function keptCopy(request) {
-  const cached = await caches.match(request);
-  const network = fetch(request).then((response) => {
+  try {
+    const response = await fetch(request);
     if (response.ok) keep(request, response.clone());
     return response;
-  }).catch(() => null);
-  return cached || (await network) || Response.error();
+  } catch (error) {
+    const cached = await caches.match(request);
+    return cached || Response.error();
+  }
 }
 
 async function keep(request, response) {
