@@ -80,62 +80,158 @@
     return entry.within ? `Solved - ${lines}` : `Solved - ${lines}, over budget`;
   }
 
-  // WHY: one row per level, in pack order, each a button back into Work. Unsolved work says what
-  //      it is: the one to do next, or one that is waiting. No row states a rank.
-  function render(mount, shelf, progress, onPick) {
+  // WHY: the letters that do not decompose under NFD (ł, ø, đ, ß, æ, œ, ı) are mapped first, so a
+  //      learner typing "lodz" reaches "Łódź" - the next subject is Polish, and the search must not
+  //      be a wall for the very packs it exists to find. The combining marks are then stripped.
+  const FOLD_MAP = { 'ł': 'l', 'ø': 'o', 'đ': 'd', 'ß': 'ss', 'æ': 'ae', 'œ': 'oe', 'ı': 'i' };
+  function fold(text) {
+    return String(text).toLowerCase()
+      .replace(/[łøđßæœı]/g, (ch) => FOLD_MAP[ch])
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '');
+  }
+
+  // WHY: with thousands of packs the view cannot build a row per level. One line per pack is the
+  //      index; a pack's levels are built only when it is opened. Every pack starts closed, so the
+  //      first screen is a scannable list and no level is hidden behind an open one. The open set
+  //      lives in memory only - no storage key - and a pack the learner opens stays open while the
+  //      app runs. A pack line shows a size (its level count), never a solved figure: a ratio is
+  //      the shape of a completion meter, and the record is per level.
+  const state = { open: {} };
+  const SEARCH_CAP = 200;
+  const CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+
+  function matchesFor(shelf, query) {
+    const q = fold(query || '').trim();
+    const matches = [];
+    shelf.forEach((pack) => {
+      if (q === '') {
+        matches.push({ pack, levels: pack.levels });
+        return;
+      }
+      if (fold(pack.name).includes(q)) {
+        matches.push({ pack, levels: pack.levels });
+        return;
+      }
+      const hits = pack.levels.filter((level) => fold(level.title).includes(q));
+      if (hits.length) matches.push({ pack, levels: hits });
+    });
+    return { q, matches };
+  }
+
+  function levelRow(pack, level, entry, next) {
+    const row = doc.createElement('button');
+    row.type = 'button';
+    row.className = 'evidence-row';
+    row.dataset.pack = pack.id;
+    row.dataset.level = level.id;
+
+    const title = doc.createElement('span');
+    title.className = 'ev-title';
+    title.textContent = level.title;
+
+    const cost = doc.createElement('span');
+    cost.className = 'ev-cost';
+    if (entry) {
+      cost.textContent = costText(entry);
+      cost.classList.add(entry.within ? 'is-solved' : 'is-over');
+    } else if (next && next.level.id === level.id) {
+      cost.textContent = 'Work to do';
+      cost.classList.add('is-todo');
+    } else {
+      cost.textContent = 'Not solved yet';
+      cost.classList.add('is-waiting');
+    }
+
+    const chevron = doc.createElement('span');
+    chevron.innerHTML = CHEVRON;
+
+    row.appendChild(title);
+    row.appendChild(cost);
+    row.appendChild(chevron);
+    return row;
+  }
+
+  function packRow(pack, open) {
+    const head = doc.createElement('button');
+    head.type = 'button';
+    head.className = 'evidence-pack';
+    head.dataset.packRow = pack.id;
+    head.setAttribute('aria-expanded', String(open));
+    head.setAttribute('aria-controls', `evidence-levels-${pack.id}`);
+
+    const chevron = doc.createElement('span');
+    chevron.innerHTML = CHEVRON;
+    const name = doc.createElement('span');
+    name.className = 'ev-pack-name';
+    name.textContent = pack.name;
+    const count = doc.createElement('span');
+    count.className = 'ev-pack-count';
+    count.textContent = `${pack.levels.length} levels`;
+
+    head.appendChild(chevron);
+    head.appendChild(name);
+    head.appendChild(count);
+    return head;
+  }
+
+  function render(mount, shelf, progress, onPick, query) {
     if (!mount || !doc) return;
     const next = nextUnsolved(shelf, progress);
     mount.textContent = '';
 
-    shelf.forEach((pack) => {
-      pack.levels.forEach((level) => {
-        const entry = progress[level.id];
-        const row = doc.createElement('button');
-        row.type = 'button';
-        row.className = 'evidence-row';
-        row.dataset.pack = pack.id;
-        row.dataset.level = level.id;
+    const { q, matches } = matchesFor(shelf, query);
 
-        const main = doc.createElement('span');
-        main.className = 'ev-row-main';
-        const packName = doc.createElement('span');
-        packName.className = 'ev-pack';
-        packName.textContent = pack.name;
-        const title = doc.createElement('span');
-        title.className = 'ev-title';
-        title.textContent = level.title;
-        main.appendChild(packName);
-        main.appendChild(title);
+    if (matches.length === 0) {
+      const empty = doc.createElement('p');
+      empty.className = 'evidence-empty';
+      empty.textContent = `No pack or level matches "${String(query || '').trim()}".`;
+      mount.appendChild(empty);
+      return;
+    }
 
-        const cost = doc.createElement('span');
-        cost.className = 'ev-cost';
-        if (entry) {
-          cost.textContent = costText(entry);
-          cost.classList.add(entry.within ? 'is-solved' : 'is-over');
-        } else if (next && next.level.id === level.id) {
-          cost.textContent = 'Work to do';
-          cost.classList.add('is-todo');
-        } else {
-          cost.textContent = 'Not solved yet';
-          cost.classList.add('is-waiting');
-        }
+    if (matches.length === 1) state.open[matches[0].pack.id] = true;
 
-        const chevron = doc.createElement('span');
-        chevron.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
-
-        row.appendChild(main);
-        row.appendChild(cost);
-        row.appendChild(chevron);
-        mount.appendChild(row);
+    // WHY: an empty query lists every pack - one line each, kept cheap by content-visibility - so
+    //      browsing is never capped. The 200 ceiling guards search results only, and it speaks:
+    //      silently truncating would lie about what exists.
+    const drawn = q === '' ? matches : matches.slice(0, SEARCH_CAP);
+    drawn.forEach(({ pack, levels }) => {
+      const open = !!state.open[pack.id];
+      mount.appendChild(packRow(pack, open));
+      if (!open) return;
+      const group = doc.createElement('div');
+      group.className = 'evidence-levels';
+      group.id = `evidence-levels-${pack.id}`;
+      group.setAttribute('role', 'group');
+      group.setAttribute('aria-label', pack.name);
+      levels.forEach((level) => {
+        group.appendChild(levelRow(pack, level, progress[level.id], next));
       });
+      mount.appendChild(group);
     });
+
+    if (q !== '' && matches.length > SEARCH_CAP) {
+      const more = doc.createElement('p');
+      more.className = 'evidence-more';
+      more.textContent = `${matches.length} packs match. Showing the first ${SEARCH_CAP} - keep typing to narrow it.`;
+      mount.appendChild(more);
+    }
 
     if (!mount.dataset.wired) {
       mount.dataset.wired = 'true';
       mount.addEventListener('click', (event) => {
-        const row = event.target.closest ? event.target.closest('[data-level]') : null;
-        if (!row || !onPick) return;
-        onPick(row.dataset.pack, row.dataset.level);
+        if (!event.target.closest) return;
+        const row = event.target.closest('[data-level]');
+        if (row) {
+          if (onPick) onPick(row.dataset.pack, row.dataset.level);
+          return;
+        }
+        const head = event.target.closest('[data-pack-row]');
+        if (head) {
+          state.open[head.dataset.packRow] = !state.open[head.dataset.packRow];
+          render(mount, shelf, progress, onPick, query);
+        }
       });
     }
   }

@@ -145,9 +145,17 @@
           <div class="evidence-head">
             <div class="kicker">Evidence</div>
             <h1>What each program cost</h1>
-            <p>Solved levels show the lines they took against their budget. The record stays in this browser on this machine. Pick any level to work on it again.</p>
+            <p>Solved levels show the lines they took against their budget. The record stays in this browser on this machine. Find a pack, open it, and pick any level to work on it again.</p>
+            <button type="button" class="evidence-next" id="evidence-next" hidden>
+              <span class="evidence-next-label">Work to do</span>
+              <span class="evidence-next-name" id="evidence-next-name"></span>
+            </button>
             <div class="evidence-actions">
               <button type="button" class="add-level" id="pack-add-open" aria-haspopup="dialog" aria-controls="pack-add-modal" title="Add a level">Add a level</button>
+            </div>
+            <div class="evidence-search-row">
+              <label class="sr-only" for="evidence-search">Find a pack or a level</label>
+              <input class="evidence-search" id="evidence-search" type="search" placeholder="Find a pack or a level" autocomplete="off">
             </div>
           </div>
           <div class="evidence-list" id="evidence-list"></div>

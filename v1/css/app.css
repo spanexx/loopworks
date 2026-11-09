@@ -941,31 +941,114 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
 .evidence-list { display: flex; flex-direction: column; border-top: 1px solid var(--edge); }
 
-.evidence-row {
+/* WHY: the next unsolved level is the one thing the page is for, and at a thousand packs its row can
+   sit a thousand lines down. One named line above the list keeps the promise without counting
+   anything; it disappears when nothing is unsolved rather than celebrating. */
+.evidence-next {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--signal);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.evidence-next:hover { background: var(--panel); }
+
+.evidence-next-label {
+  font: 10px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--amber-ink);
+  white-space: nowrap;
+}
+
+.evidence-next-name { font-size: 13px; }
+
+.evidence-search-row { margin: 0 0 18px; }
+
+.evidence-search {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 0;
+  background: var(--panel);
+  color: var(--ink);
+  font: 13px var(--sans);
+}
+
+.evidence-search::placeholder { color: var(--faint); }
+
+.evidence-search:focus {
+  outline: none;
+  border-color: var(--signal);
+  box-shadow: inset 0 0 0 1px var(--signal);
+}
+
+/* WHY: one line per pack, and only the visible window is laid out and painted. content-visibility
+   keeps a thousand pack lines cheap without a windowing library; the intrinsic size stops the
+   scrollbar jumping as lines render. */
+.evidence-pack {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 14px;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 16px;
-  padding: 14px 6px;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 6px 13px 0;
   border: 0;
   border-bottom: 1px solid var(--edge);
   background: transparent;
   text-align: left;
   color: var(--ink);
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 46px;
 }
+
+.evidence-pack:hover { background: var(--panel); }
+
+.evidence-pack svg { width: 12px; height: 12px; color: var(--faint); transition: transform .12s ease; }
+
+.evidence-pack[aria-expanded="true"] svg { transform: rotate(90deg); color: var(--amber-ink); }
+
+.ev-pack-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ev-pack-count { font: 11px var(--mono); color: var(--faint); white-space: nowrap; }
+
+.evidence-levels { border-bottom: 1px solid var(--edge); }
+
+.evidence-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 11px 6px 11px 26px;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.evidence-levels .evidence-row:first-child { border-top: 0; }
 
 .evidence-row:hover { background: var(--panel); }
 
-.ev-row-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-
-.ev-pack {
-  font: 9px var(--mono);
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.ev-title { font-size: 15px; font-weight: 600; }
+.ev-title { font-size: 13px; }
 
 .ev-cost { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
 
@@ -974,7 +1057,11 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 .ev-cost.is-todo { color: var(--amber-ink); }
 .ev-cost.is-waiting { color: var(--faint); }
 
-.evidence-row svg { width: 14px; height: 14px; color: var(--faint); }
+.evidence-row svg { width: 12px; height: 12px; color: var(--faint); }
+
+.evidence-more { margin: 0; padding: 14px 6px; font: 11px var(--mono); color: var(--muted); }
+
+.evidence-empty { margin: 0; padding: 22px 6px; font-size: 13px; color: var(--muted); }
 
 /* ---------------------------------------------------------------- the door to the shelf */
 
