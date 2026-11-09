@@ -1,8 +1,11 @@
-// WHY: pack two, and the proof of the layer claim. Same engine, same verbs, same sensors - one
-//      new rule. A player who has beaten The Depot meets a different kind of problem, and not
-//      one new word.
+// WHY: pack two, and the proof of the layer claim. Same engine, same sensors, one new rule - a
+//      battery. It now hands over FEWER words than The Depot: u-turn is withheld pack-wide, so the
+//      hard tier (night-8..night-10) must be solved without a turn-back word. That is the withholding
+//      lever locked in loopworks-u-turn-verb and first spent here in loopworks-hard-tier - not a new
+//      verb, sensor or rule.
 // PACK: loopworks
 // 2026-11-03 qoder-agent: authored to GRILL-loopworks.txt entries 7 and 13.
+// 2026-11-08 qoder-agent: u-turn withheld and the hard tier added, to GRILL-loopworks-hard-tier.txt.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -11,13 +14,16 @@
     id: 'night-shift',
     name: 'The Night Shift',
     subject: 'programming logic',
-    blurb: 'Same depot, same words, and a battery. Every cell the drone walks costs one unit of charge, so a wasted step is now a failure.',
+    blurb: 'Same depot, a battery, and one word fewer. Every cell the drone walks costs one unit of charge, so a wasted step is now a failure - and the turn-back word is not yours here.',
     verbs: ['forward', 'turn left', 'turn right', 'grab', 'drop'],
     sensors: ['wall ahead', 'clear ahead', 'crate ahead', 'pad ahead'],
     // WHY: this one line is the whole new layer. The engine enforces it and knows nothing about
     //      batteries - it only knows a pack asked for a fuel count.
     rules: { fuel: 12 },
 
+    // WHY: every level names the plausible wrong programs it refuses, in the same text a player types.
+    //      These are read by the harness and never by the engine - a trap that wins inside the Budget
+    //      turns the shelf red, which is the difficulty instrument landing (`loopworks-difficulty-instrument`).
     levels: [
       {
         id: 'night-1',
@@ -36,7 +42,8 @@
         ],
         start: { x: 6, y: 1, dir: 'E' },
         pads: [[10, 1], [2, 1]],
-        crates: []
+        crates: [],
+        traps: ['turn left\nturn left\nforward 8\nturn left\nturn left\nforward 8']
       },
       {
         id: 'night-2',
@@ -56,7 +63,8 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[2, 1], [4, 2], [3, 4], [1, 3]],
-        crates: []
+        crates: [],
+        traps: ['forward 3\nturn right\nforward 3\nturn right\nforward 3\nturn right\nforward 3\nturn right']
       },
       {
         id: 'night-3',
@@ -80,7 +88,11 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[3, 1], [5, 2], [3, 3], [1, 2]],
-        crates: []
+        crates: [],
+        traps: [
+          'repeat 2\n  forward 4\n  turn right\n  forward 2\n  turn right\nend',
+          'repeat 4\n  forward 3\n  turn right\nend'
+        ]
       },
       {
         id: 'night-4',
@@ -104,7 +116,8 @@
         ],
         start: { x: 5, y: 3, dir: 'N' },
         pads: [[5, 2], [3, 3], [11, 3]],
-        crates: []
+        crates: [],
+        traps: ['turn right\nforward 6\nturn left\nturn left\nforward 8\nturn right\nforward 2\nturn left\nforward 1']
       },
       {
         id: 'night-5',
@@ -126,7 +139,8 @@
         ],
         start: { x: 1, y: 1, dir: 'E' },
         pads: [[3, 1]],
-        crates: [[9, 1]]
+        crates: [[9, 1]],
+        traps: ['forward 8\ngrab\nturn left\nturn left\nforward 4\ndrop']
       },
       {
         id: 'night-6',
@@ -150,7 +164,11 @@
         ],
         start: { x: 1, y: 2, dir: 'E' },
         pads: [[4, 3], [7, 3], [10, 3]],
-        crates: [[4, 1], [7, 1], [10, 1]]
+        crates: [[4, 1], [7, 1], [10, 1]],
+        traps: [
+          'forward 3\nturn left\ngrab\nturn left\nturn left\ndrop\nturn left\nforward 3\nturn left\ngrab\nturn left\nturn left\ndrop\nturn left\nforward 3\nturn left\ngrab\nturn left\nturn left\ndrop',
+          'repeat 3\n  forward 4\n  turn left\n  grab\n  turn left\n  turn left\n  drop\n  turn left\nend'
+        ]
       },
       {
         id: 'night-7',
@@ -174,7 +192,91 @@
         ],
         start: { x: 1, y: 2, dir: 'E' },
         pads: [[3, 3], [7, 3]],
-        crates: [[3, 1], [7, 1]]
+        crates: [[3, 1], [7, 1]],
+        traps: ['forward 2\nturn left\ngrab\nturn left\nturn left\ndrop\nturn left\nforward 4\nturn left\ngrab\nturn left\nturn left\ndrop']
+      },
+      {
+        id: 'night-8',
+        title: 'The Doorway',
+        teaches: 'the order the map forces',
+        // WHY: the near pad at x4 is the only doorway east to the far pad. Fill it first and the
+        //      crate you still need - parked in the west bay - can never be carried past your own
+        //      drop: a filled pad is a wall the player wrote himself. The honest route fills the far
+        //      pad first, then comes back. Both traps below lose on the map (a bump), not on length;
+        //      the third burns the battery. This is the hard tier's route lever (`loopworks-hard-tier`).
+        budget: 13,
+        goal: { kind: 'fill', count: 2 },
+        goalSentence: 'Leave a crate on both marked pads.',
+        teachesSentence: 'Fill the far pad first. The near pad is the only doorway to the crate you still need.',
+        rows: [
+          '#########',
+          '##..#####',
+          '#.......#',
+          '#########'
+        ],
+        start: { x: 1, y: 2, dir: 'E' },
+        pads: [[4, 2], [6, 2]],
+        crates: [[2, 1], [3, 1]],
+        traps: [
+          'forward 2\nturn left\ngrab\nturn right\ndrop\nturn left\nturn left\nforward 1\nturn right\ngrab\nturn right\nforward 3',
+          'forward 2\nturn left\ngrab\nturn right\ndrop\nforward 3',
+          'repeat 7\n  forward 2\n  turn left\n  turn left\nend'
+        ]
+      },
+      {
+        id: 'night-9',
+        title: 'The Long Way Back',
+        teaches: 'turning back without u-turn',
+        // WHY: a dead-end fetch where the reversal would be one line with u-turn and is two without
+        //      it - and this pack does not hand u-turn over. The Budget of six is the honest route's
+        //      exact length, so the wasted turn the missing word tempts (turn left, turn right, then
+        //      drop) solves but runs to eight lines and is refused. Two traps bump; only the third is
+        //      a length loss. This is the hard tier's fewer-words lever (`loopworks-hard-tier`).
+        budget: 6,
+        goal: { kind: 'fill', count: 1 },
+        goalSentence: 'Bring the crate at the end of the aisle back to the marked pad.',
+        teachesSentence: 'There is no turn-back word here. Reverse with two turns, and the Budget refuses a wasted one.',
+        rows: [
+          '##########',
+          '#........#',
+          '##########'
+        ],
+        start: { x: 1, y: 1, dir: 'E' },
+        pads: [[3, 1]],
+        crates: [[8, 1]],
+        traps: [
+          'forward 7\ngrab\nturn left\nturn left\nforward 3\ndrop',
+          'forward 6\ngrab\nturn left\nforward 1',
+          'forward 6\ngrab\nturn left\nturn left\nforward 3\nturn left\nturn right\ndrop'
+        ]
+      },
+      {
+        id: 'night-10',
+        title: 'Last Charge, Far Pad',
+        teaches: 'order and turning back on one charge',
+        // WHY: both levers at once. The doorway order of night-8 and the two-turn reversal of night-9,
+        //      on a board whose honest route spends all twelve charge - forward 1 + 6 + 5 - so one
+        //      wasted cell is fatal. Near-first bumps into the player's own filled pad; a two-cell
+        //      detour and an oscillation both die on the battery. None of the three loses on length
+        //      (`loopworks-hard-tier`).
+        budget: 13,
+        goal: { kind: 'fill', count: 2 },
+        goalSentence: 'Leave a crate on both marked pads before the charge runs out.',
+        teachesSentence: 'Fill the far pad first and turn back with two turns. The honest route spends all twelve charge, so one wasted cell is fatal.',
+        rows: [
+          '###########',
+          '##..#######',
+          '#.........#',
+          '###########'
+        ],
+        start: { x: 1, y: 2, dir: 'E' },
+        pads: [[4, 2], [9, 2]],
+        crates: [[2, 1], [3, 1]],
+        traps: [
+          'forward 2\nturn left\ngrab\nturn right\ndrop\nturn left\nturn left\nforward 1\nturn right\ngrab\nturn right\nforward 6',
+          'repeat 7\n  forward 2\n  turn left\n  turn left\nend',
+          'forward 1\nturn left\ngrab\nturn right\nforward 6\ndrop\nturn left\nturn left\nforward 5\nforward 1\nturn left\nturn left\nforward 1\nturn right\ngrab\nturn right\ndrop'
+        ]
       }
     ]
   };

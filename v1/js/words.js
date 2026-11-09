@@ -12,6 +12,7 @@
     forward: 'Walks the drone forward one cell. Add a number after it to walk further, like forward 3.',
     'turn left': 'Turns the drone a quarter turn to the left, standing still.',
     'turn right': 'Turns the drone a quarter turn to the right, standing still.',
+    'u-turn': 'Turns the drone all the way around, standing still. One line and one tick, like every other instruction.',
     grab: 'Picks up the crate in the cell in front of the drone. The drone carries one crate at a time.',
     drop: 'Puts down the crate the drone is carrying, in the cell in front of it. On a pad, the crate fills the pad.',
     'if wall ahead': 'Asks whether the way forward is blocked by a wall, a crate, or the edge of the floor. When the answer is yes, the action after the colon runs. Asking costs one tick either way.',
