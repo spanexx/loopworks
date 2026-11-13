@@ -146,6 +146,14 @@
 
   function packError(list, id, message) { list.push(`pack "${id}": ${message}`); }
 
+  // WHY: a label is opaque to the engine. Letters, note names and symbols all fit, and the engine
+  //      only ever compares one label with another. One to three characters is the room a board cell
+  //      has, not a language rule - the engine never learns what a label means.
+  // 2026-11-13 agent: added for docs/features/loopworks-labelled-crate (GRILL decision 1).
+  function labelOk(label) {
+    return typeof label === 'string' && label.length >= 1 && label.length <= 3;
+  }
+
   // WHY: a pack is data a stranger could write, so it gets checked before a player ever sees
   //      it. A broken pack is reported by name and the rest of the packs still load - the app
   //      never falls over because someone's level file was wrong.
@@ -197,7 +205,26 @@
         claim(level.start.x, level.start.y, 'start');
       }
       (level.pads || []).forEach((p) => claim(p[0], p[1], 'pad'));
-      (level.crates || []).forEach((c) => claim(c[0], c[1], 'crate'));
+      // WHY: a crate's third element is its label. A two-element crate stays anonymous and keeps
+      //      working, so every shipped level is untouched (GRILL decision 2).
+      (level.crates || []).forEach((c) => {
+        claim(c[0], c[1], 'crate');
+        if (c.length > 2 && !labelOk(c[2])) {
+          packError(errors, id, `${where} gives a crate at [${c[0]},${c[1]}] a label that is not one to three characters`);
+        }
+      });
+
+      // WHY: the hole is an object, not terrain. Rows stay "#" and ".", and one hole is the most a
+      //      level can hold, which is the shape the learner asked for (GRILL decisions 3 and 12).
+      const holes = level.holes === undefined ? [] : level.holes;
+      if (!Array.isArray(holes)) {
+        packError(errors, id, `${where} has holes that are not a list`);
+      }
+      const holeList = Array.isArray(holes) ? holes : [];
+      if (holeList.length > 1) {
+        packError(errors, id, `${where} holds ${holeList.length} holes, but one hole is the most a level can hold`);
+      }
+      holeList.forEach((h) => claim(h[0], h[1], 'hole'));
 
       // WHY: a level with crates is a level about carrying them, so the pack has to hand the
       //      player the words for it. This is the check that keeps a pack honest.
@@ -217,7 +244,40 @@
         if (goal.count > (level.crates || []).length) packError(errors, id, `${where} asks to fill with ${goal.count} crates but only ${level.crates.length} exist`);
         if (goal.count > (level.pads || []).length) packError(errors, id, `${where} asks to fill ${goal.count} but only ${level.pads.length} pads exist`);
       }
-      if (!['visit', 'fill'].includes(goal.kind)) packError(errors, id, `${where} has a goal kind "${goal.kind}" that is not visit or fill`);
+      if (goal.kind === 'hole') {
+        // WHY: a hole level is won by a sequence, so the pack is refused by name when the sequence
+        //      has no hole to land in, is empty, asks for a label the board does not place, or
+        //      withholds the two verbs the hole needs (GRILL decision 7).
+        if (holeList.length !== 1) {
+          packError(errors, id, `${where} asks for a hole but places ${holeList.length} holes`);
+        }
+        if (!Array.isArray(goal.sequence) || goal.sequence.length === 0) {
+          packError(errors, id, `${where} asks for a hole but its sequence is empty`);
+        } else {
+          const unknown = goal.sequence.filter((label) => !labelOk(label));
+          if (unknown.length > 0) {
+            packError(errors, id, `${where} has a sequence label that is not one to three characters`);
+          }
+          const have = {};
+          (level.crates || []).forEach((c) => {
+            if (labelOk(c[2])) have[c[2]] = (have[c[2]] || 0) + 1;
+          });
+          const want = {};
+          goal.sequence.forEach((label) => { if (labelOk(label)) want[label] = (want[label] || 0) + 1; });
+          Object.keys(want).forEach((label) => {
+            const found = have[label] || 0;
+            if (found < want[label]) {
+              packError(errors, id, `${where} asks for "${label}" ${want[label]} time${want[label] === 1 ? '' : 's'} but only ${found} crate${found === 1 ? '' : 's'} ${found === 1 ? 'carries' : 'carry'} it`);
+            }
+          });
+        }
+        ['grab', 'drop'].forEach((verb) => {
+          if ((pack.verbs || []).indexOf(verb) === -1) {
+            packError(errors, id, `${where} asks for a hole but the pack does not unlock "${verb}"`);
+          }
+        });
+      }
+      if (!['visit', 'fill', 'hole'].includes(goal.kind)) packError(errors, id, `${where} has a goal kind "${goal.kind}" that is not visit, fill or hole`);
       if (!(Number.isInteger(level.budget) && level.budget > 0)) packError(errors, id, `${where} needs a line budget above zero`);
       if (!level.teaches || !level.title) packError(errors, id, `${where} does not say what it teaches`);
     });
@@ -230,16 +290,27 @@
   //      still a pad, so both flags live on the same cell rather than trading one slot.
   function buildWorld(level, pack) {
     const cells = level.rows.map((row) => row.split('').map((ch) => ({
-      wall: ch === '#', crate: false, pad: false, filled: false, visited: false
+      wall: ch === '#', crate: false, pad: false, filled: false, visited: false,
+      // WHY: the label lives on the cell that holds the crate, and the opening lives on its own
+      //      cell. Both default empty, so a shipped level carries them without changing.
+      label: null, hole: false
     })));
     (level.pads || []).forEach((p) => { cells[p[1]][p[0]].pad = true; });
-    (level.crates || []).forEach((c) => { cells[c[1]][c[0]].crate = true; });
+    (level.crates || []).forEach((c) => {
+      const target = cells[c[1]][c[0]];
+      target.crate = true;
+      target.label = labelOk(c[2]) ? c[2] : null;
+    });
+    (level.holes || []).forEach((h) => { cells[h[1]][h[0]].hole = true; });
     const fuel = pack.rules && pack.rules.fuel ? pack.rules.fuel : null;
     return {
       level, pack, cells,
       cols: level.rows[0].length, rows: level.rows.length,
       drone: { x: level.start.x, y: level.start.y, dir: level.start.dir },
-      carries: false, fuelLeft: fuel, fuelWas: fuel,
+      // WHY: carries stays the boolean every screen and every guard already reads; the label travels
+      //      beside it, and the hole keeps the sequence it has accepted so far (GRILL decision 2).
+      carries: false, carryLabel: null, hole: [],
+      fuelLeft: fuel, fuelWas: fuel,
       padsVisited: 0, cratesOnPads: 0
     };
   }
@@ -261,8 +332,11 @@
   function askSensor(world, sensor) {
     const ahead = facingCell(world, 1);
     const cell = at(world, ahead.x, ahead.y);
-    if (sensor === 'wall ahead') return cell === null || (cell && cell.wall) || (cell && cell.crate);
-    if (sensor === 'clear ahead') return cell !== null && cell.wall === false && cell.crate === false;
+    // WHY: the hole is an obstruction, exactly as a wall or a crate is. "clear ahead" is what a loop
+    //      asks before it walks, so it has to say no; "wall ahead" keeps its shipped meaning of
+    //      "cannot walk there" (GRILL decision 4, D-8).
+    if (sensor === 'wall ahead') return cell === null || (cell && cell.wall) || (cell && cell.crate) || (cell && cell.hole);
+    if (sensor === 'clear ahead') return cell !== null && cell.wall === false && cell.crate === false && cell.hole === false;
     if (sensor === 'crate ahead') return cell !== null && cell.crate === true;
     if (sensor === 'pad ahead') return cell !== null && cell.pad === true;
     return false;
@@ -272,11 +346,14 @@
     return {
       drone: { x: world.drone.x, y: world.drone.y, dir: world.drone.dir },
       carries: world.carries,
+      carryLabel: world.carryLabel,
+      hole: world.hole.slice(),
       fuelLeft: world.fuelLeft,
       padsVisited: world.padsVisited,
       cratesOnPads: world.cratesOnPads,
       cells: world.cells.map((row) => row.map((c) => ({
-        wall: c.wall, crate: c.crate, pad: c.pad, filled: c.filled, visited: c.visited
+        wall: c.wall, crate: c.crate, pad: c.pad, filled: c.filled, visited: c.visited,
+        label: c.label, hole: c.hole
       })))
     };
   }
@@ -287,6 +364,13 @@
     //      count is the pad count; visit means the drone has walked onto that many pads.
     if (goal.kind === 'visit') return world.padsVisited >= goal.count;
     if (goal.kind === 'fill') return world.cratesOnPads >= goal.count;
+    // WHY: a hole is won when the labels it holds are the sequence the goal asks for, in the same
+    //      order. The engine compares labels; it never asks what they spell (GRILL decision 6).
+    if (goal.kind === 'hole') {
+      const wanted = goal.sequence || [];
+      if (world.hole.length !== wanted.length) return false;
+      return wanted.every((label, index) => world.hole[index] === label);
+    }
     return false;
   }
 
@@ -335,6 +419,12 @@
           event.action = 'forward'; event.ok = false; event.note = 'a crate is in the way';
           return { done: true, status: 'stuck', reason: 'bump', event: commit(vm, event, st.line) };
         }
+        // WHY: the hole is a container, not floor. The drone stands beside it and drops in, so a
+        //      forward into it is a bump that ends the run, named like any other obstruction.
+        if (cell.hole) {
+          event.action = 'forward'; event.ok = false; event.note = 'a hole is in the way';
+          return { done: true, status: 'stuck', reason: 'bump', event: commit(vm, event, st.line) };
+        }
         world.drone.x = ahead.x; world.drone.y = ahead.y;
         if (world.fuelLeft !== null) world.fuelLeft -= 1;
         if (cell.pad && !cell.visited) { cell.visited = true; world.padsVisited += 1; }
@@ -368,7 +458,19 @@
       event.action = 'grab';
       if (world.carries) { event.ok = false; event.note = 'already carrying a crate'; }
       else if (!cell || !cell.crate) { event.ok = false; event.note = 'nothing to grab in front'; }
-      else { cell.crate = false; world.carries = true; if (cell.filled) { cell.filled = false; world.cratesOnPads -= 1; } event.note = `picked up at (${ahead.x},${ahead.y})`; }
+      else {
+        // WHY: the label travels with the crate. Clearing it from the cell keeps one crate in one
+        //      place; the trace names it so the player can see what the claw holds.
+        const label = cell.label;
+        cell.crate = false;
+        cell.label = null;
+        world.carries = true;
+        world.carryLabel = label || null;
+        if (cell.filled) { cell.filled = false; world.cratesOnPads -= 1; }
+        event.note = world.carryLabel
+          ? `picked up ${world.carryLabel} at (${ahead.x},${ahead.y})`
+          : `picked up at (${ahead.x},${ahead.y})`;
+      }
       return commit(vm, event, st.line);
     }
 
@@ -378,7 +480,42 @@
       event.action = 'drop';
       if (!world.carries) { event.ok = false; event.note = 'carrying nothing'; }
       else if (!cell || cell.wall || cell.crate) { event.ok = false; event.note = 'nowhere to drop in front'; }
-      else { cell.crate = true; world.carries = false; if (cell.pad) { cell.filled = true; world.cratesOnPads += 1; } event.note = `left a crate at (${ahead.x},${ahead.y})`; }
+      else if (cell.hole) {
+        // WHY: the hole keeps the word in spelling order. It takes a labelled crate only when that
+        //      label is the next one the goal asks for; any other drop is a wasted line and the
+        //      crate stays in the claw, exactly as an unfetchable grab does (GRILL decision 5).
+        const goal = world.level.goal || {};
+        const sequence = goal.kind === 'hole' && Array.isArray(goal.sequence) ? goal.sequence : [];
+        const wanted = sequence[world.hole.length];
+        if (!world.carryLabel) {
+          event.ok = false;
+          event.note = 'the hole only takes a labelled crate';
+        } else if (!wanted) {
+          event.ok = false;
+          event.note = goal.kind === 'hole' ? 'the hole is full' : 'this hole is not the goal';
+        } else if (world.carryLabel !== wanted) {
+          event.ok = false;
+          event.note = `the hole wants ${wanted} next - ${world.carryLabel} stays in the claw`;
+        } else {
+          const label = world.carryLabel;
+          world.hole.push(label);
+          world.carries = false;
+          world.carryLabel = null;
+          event.note = `dropped ${label} into the hole - the hole holds ${world.hole.join(', ')}`;
+        }
+      } else {
+        // WHY: a labelled crate dropped on ordinary floor lies there with its label and can be
+        //      grabbed again, so a wrong crate can still be moved out of the way.
+        const label = world.carryLabel;
+        cell.crate = true;
+        cell.label = label;
+        world.carries = false;
+        world.carryLabel = null;
+        if (cell.pad) { cell.filled = true; world.cratesOnPads += 1; }
+        event.note = label
+          ? `left ${label} at (${ahead.x},${ahead.y})`
+          : `left a crate at (${ahead.x},${ahead.y})`;
+      }
       return commit(vm, event, st.line);
     }
 

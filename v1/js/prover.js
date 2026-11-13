@@ -69,15 +69,21 @@
   //      which crate is still on the floor are different worlds, and merging them hides the walk that
   //      finishes the level. Fuel belongs in it for the same reason: a world first reached with less fuel
   //      left cannot play out the futures a cheaper arrival can.
+  // 2026-11-13 agent: the key now carries each crate's label, the label in the claw and the labels
+  //      already in the hole. Without them two worlds that differ only in what the player has built
+  //      merge, and the search prunes the winning path (GRILL-loopworks-labelled-crate decision 8).
   function worldKey(world, last) {
     let board = '';
     (world.cells || []).forEach((row) => {
       row.forEach((cell) => {
         if (cell.wall) return;
-        board += `${cell.crate ? 'c' : '-'}${cell.filled ? 'f' : '-'}${cell.visited ? 'v' : '-'}`;
+        const label = cell.label ? `l${cell.label.length}${cell.label}` : '-';
+        board += `${cell.crate ? 'c' : '-'}${cell.filled ? 'f' : '-'}${cell.visited ? 'v' : '-'}${label}`;
       });
     });
-    return [world.drone.x, world.drone.y, world.drone.dir, world.carries ? 1 : 0, world.fuelLeft, board, last || ''].join('|');
+    const carried = world.carryLabel ? `${world.carryLabel.length}${world.carryLabel}` : '-';
+    return [world.drone.x, world.drone.y, world.drone.dir, world.carries ? 1 : 0, carried,
+      JSON.stringify(world.hole || []), world.fuelLeft, board, last || ''].join('|');
   }
 
   function stateOf(caps) {
