@@ -17,9 +17,13 @@
   const ANGLE = { N: 0, E: 90, S: 180, W: 270 };
 
   // WHY: a pad that holds a crate is a filled pad, and a pad already walked on is a reached pad.
-  //      The order matters: filled beats reached, reached beats plain pad.
+  //      The order matters: filled beats reached, reached beats plain pad. A hole is none of those:
+  //      it is a container, so it wins over everything but a wall.
+  // 2026-11-13 agent: the hole role and the crate label landed for
+  //      docs/features/loopworks-labelled-crate, GRILL decision 10.
   function roleOf(cell) {
     if (cell.wall) return 'is-wall';
+    if (cell.hole) return 'is-hole';
     if (cell.pad && cell.filled) return 'is-filled';
     if (cell.pad && cell.visited) return 'is-reached';
     if (cell.pad) return 'is-pad';
@@ -29,8 +33,9 @@
   function describe(cell, x, y) {
     const parts = ['floor'];
     if (cell.wall) parts[0] = 'wall';
+    if (cell.hole) parts[0] = 'hole';
     if (cell.pad) parts.push(cell.filled ? 'filled pad' : cell.visited ? 'reached pad' : 'pad');
-    if (cell.crate) parts.push('crate');
+    if (cell.crate) parts.push(cell.label ? `crate ${cell.label}` : 'crate');
     return `(${x},${y}) ${parts.join(', ')}`;
   }
 
@@ -52,8 +57,11 @@
         square.title = describe(cell, x, y);
         if (cell.crate) {
           const crate = host.document.createElement('span');
-          crate.className = 'crate';
-          crate.innerHTML = CRATE;
+          // WHY: a label is pack data, so it is written as text, never markup. The box glyph is
+          //      replaced by the label because a cell is too small to show both.
+          crate.className = cell.label ? 'crate is-labelled' : 'crate';
+          if (cell.label) crate.textContent = cell.label;
+          else crate.innerHTML = CRATE;
           square.appendChild(crate);
         }
         if (snap.drone.x === x && snap.drone.y === y) {

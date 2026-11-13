@@ -959,11 +959,32 @@ check('app: scrollbars are thin and carry no arrow buttons', () => {
 check('app: every board role the renderer emits is painted', () => {
   const board = read(path.join(v1, 'js', 'board.js'));
   const css = read(path.join(v1, 'css', 'app.css'));
-  const roles = [...board.matchAll(/'(is-[a-z-]+)'/g)].map((match) => match[1]);
-  assert(roles.length >= 5, `the renderer names ${roles.length} roles, expected five`);
+  // WHY: a role can share a class string with another ("crate is-labelled"), so the tokens are read
+  //      out of every quoted class list. Matching only a string that is exactly one role let a paint
+  //      disappear without this check noticing (drift review, 2026-11-13).
+  const roles = [];
+  for (const match of board.matchAll(/'([^']*)'/g)) {
+    match[1].split(/\s+/).filter((token) => /^is-[a-z-]+$/.test(token)).forEach((role) => roles.push(role));
+  }
+  assert(roles.length >= 6, `the renderer names ${roles.length} roles, expected six`);
   const unique = [...new Set(roles)];
   unique.forEach((role) => assert(css.includes(`.${role}`), `${role} has no paint`));
   return unique.join(', ');
+});
+
+check('app: a hole goal draws one slot per label and never a fraction', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  const css = read(path.join(v1, 'css', 'app.css'));
+  assert(/goal\.kind === 'hole'/.test(app), 'the goal bar does not look for a hole goal');
+  const at = app.indexOf('function paintGoal');
+  assert(at >= 0, 'the goal bar has no paint step');
+  const body = app.slice(at, app.indexOf('\n  }', at));
+  assert(/goal-slot/.test(body), 'the slots are not created');
+  assert(/is-landed/.test(body), 'a landed label is not marked');
+  assert(/landed\[index\]/.test(body), 'a slot does not take the label the hole holds');
+  assert(!/%|\d+\s*(of|\/)\s*\d+/.test(body), 'the goal bar counts instead of naming');
+  assert(/\.goal-slot/.test(css) && /\.goal-slot\.is-landed/.test(css), 'the slots have no paint');
+  return 'one slot per label, filled from the snapshot';
 });
 
 check('app: the shell carries both views, the program drawer and the compact log', () => {
@@ -1286,8 +1307,9 @@ check('app: the narrow bar keeps the title and the goal moves to the status bar'
   assert(/display:\s*block/.test(statusRule), 'the status goal is still hidden on a phone');
   assert(/text-overflow:\s*ellipsis/.test(statusRule), 'the status goal cannot truncate');
   assert(/el\.whereLevel\.textContent = level\.title/.test(app), 'the top bar level is never written');
-  assert(/el\.goalTop\.textContent = level\.goalSentence/.test(app), 'the top bar goal is never written');
-  assert(/el\.goalStatus\.textContent = level\.goalSentence/.test(app), 'the status bar goal is never written');
+  assert(/function renderGoal[\s\S]{0,260}paintGoal\(el\.goalTop/.test(app), 'the top bar goal is never written');
+  assert(/paintGoal\(el\.goalStatus/.test(app), 'the status bar goal is never written');
+  assert(/mount\.textContent = level\.goalSentence/.test(app), 'the goal sentence is never written into a bar');
   return 'title stays, goal moves to the status bar, both truncate';
 });
 

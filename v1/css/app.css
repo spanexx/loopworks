@@ -226,6 +226,28 @@ body.is-evidence .tools { display: none; }
 
 body.is-evidence .goal-top { display: none; }
 
+/* WHY: a hole level's aim is a sequence. Each slot is drawn in the goal bar and filled as a label
+   lands; the row never prints a count or a fraction (loopworks-labelled-crate, GRILL 9 and 10). */
+.goal-seq {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.goal-slot {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25em;
+  height: 1.25em;
+  padding: 0 2px;
+  border-bottom: 2px solid var(--edge-strong);
+  font: 700 11px/1 var(--mono);
+  color: var(--signal);
+}
+
+.goal-slot.is-landed { border-color: var(--signal); }
+
 .tabs { display: flex; gap: 2px; margin-left: auto; }
 
 .tab {
@@ -418,6 +440,19 @@ body.is-evidence .goal-top { display: none; }
 }
 
 .cell.is-filled .crate { color: var(--green); }
+
+/* WHY: a hole is a container, not floor. It draws as a dark opening with nothing inside it, so a
+   label dropped in is never hidden by a glyph. */
+.cell.is-hole {
+  background: radial-gradient(circle at 50% 50%, #000 0 40%, var(--wall) 41% 78%, var(--floor) 79%);
+  border-color: var(--edge-strong);
+}
+
+/* WHY: a labelled crate draws its label instead of the box glyph; a cell is too small for both. */
+.crate.is-labelled {
+  font: 700 clamp(11px, 1.6vmin, 17px)/1 var(--mono);
+  letter-spacing: 0;
+}
 
 .crate {
   position: absolute;
