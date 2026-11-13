@@ -42,6 +42,13 @@
           <span class="sr-only">Charge left:</span>
           <span id="fuel">12/12</span>
         </div>
+        <!-- WHY: the claw is a fact about this run, not a tally. It appears only on a level that carries
+             a word, so the rest of the shelf keeps the top bar it already had. -->
+        <div class="fact" id="claw-fact" title="In the claw" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 4v7a4 4 0 0 0 8 0V4M7 4h2M15 4h2M12 15v4"/></svg>
+          <span class="sr-only">In the claw:</span>
+          <span id="claw">nothing</span>
+        </div>
         <button type="button" class="icon-btn" id="words-open" aria-label="Words" aria-haspopup="dialog" title="Words">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h5a3 3 0 0 1 3 3v14a3 3 0 0 0-3-3H4z"/><path d="M20 4h-5a3 3 0 0 0-3 3v14a3 3 0 0 1 3-3h5z"/></svg>
         </button>
@@ -54,6 +61,10 @@
         <button type="button" class="tab" data-view="evidence" aria-pressed="false" aria-label="Evidence" title="Evidence">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
           <span>Evidence</span>
+        </button>
+        <button type="button" class="tab" data-view="studio" aria-pressed="false" aria-label="Studio" title="Studio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z"/></svg>
+          <span>Studio</span>
         </button>
       </nav>
       <button type="button" class="icon-btn" data-action="toggle-theme" aria-label="Switch theme" title="Switch theme">
@@ -146,6 +157,13 @@
             <div class="kicker">Evidence</div>
             <h1>What each program cost</h1>
             <p>Solved levels show the lines they took against their budget. The record stays in this browser on this machine. Find a pack, open it, and pick any level to work on it again.</p>
+            <!-- WHY: the aim is the one named target over the evidence, built from the pack's own
+                 language and words. It names what was met; it never counts, ranks or rates. -->
+            <div class="aim" id="aim" hidden>
+              <div class="kicker">Aim</div>
+              <p class="aim-line" id="aim-line"></p>
+              <p class="aim-words" id="aim-words"></p>
+            </div>
             <button type="button" class="evidence-next" id="evidence-next" hidden>
               <span class="evidence-next-label">Work to do</span>
               <span class="evidence-next-name" id="evidence-next-name"></span>
@@ -159,6 +177,17 @@
             </div>
           </div>
           <div class="evidence-list" id="evidence-list"></div>
+        </div>
+      </section>
+
+      <section class="studio" id="view-studio" hidden>
+        <div class="studio-inner">
+          <div class="studio-head">
+            <div class="kicker">Studio</div>
+            <h1>Meet the word again</h1>
+            <p>Each word a level carries comes back here in four contexts, one at a time: its story, its spelling, a short exchange, and the words that story used. Finish one to reach the next; Back lets you read a finished one again.</p>
+          </div>
+          <div class="studio-body" id="studio-body"></div>
         </div>
       </section>
     </main>
@@ -232,6 +261,8 @@
   <script src="js/board.js"></script>
   <script src="js/evidence.js"></script>
   <script src="js/words.js"></script>
+  <script src="js/studio.js"></script>
+  <script src="js/studio-view.js"></script>
   <script src="js/sound.js"></script>
   <script src="js/level-prompt.js"></script>
   <script src="js/user-packs.js"></script>

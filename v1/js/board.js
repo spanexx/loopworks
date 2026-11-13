@@ -76,5 +76,15 @@
     }
   }
 
-  host.LoopworksBoard = { render, ANGLE };
+  // WHY: the claw is the one fact a word level adds to the top bar. A labelled crate shows its label,
+  //      an anonymous crate shows the word "crate", and an empty claw shows nothing - the label is what
+  //      the hole wants, so the fact has to be visible while the drone carries it. It reads the
+  //      snapshot and decides nothing else; the engine never learns that a label means a letter.
+  // 2026-11-13 agent: added for the v2 word pack, following GRILL-loopworks-v2-subject entry 10.
+  function carried(snap) {
+    if (!snap || snap.carries !== true) return '';
+    return typeof snap.carryLabel === 'string' && snap.carryLabel ? snap.carryLabel : 'crate';
+  }
+
+  host.LoopworksBoard = { render, carried, ANGLE };
 })();
