@@ -18,6 +18,11 @@
     'polish-3': 'turn left\ngrab\nturn right\nturn right\ndrop\nturn right\nforward 1\nturn left\ngrab\nturn right\nturn right\ndrop',
     'depot-2': 'turn left\ngrab\nturn right\nturn right\ndrop\nturn right\nforward 1\nturn left\ngrab\nturn right\nturn right\ndrop',
     'polish-2': 'repeat 4\n  forward 3\n  turn right\nend',
+    // WHY: the two word boards are planned, not looped: each letter is a grab-carry-drop cycle, and the
+    //      hole fixes the order. The programs fit their Budgets with room to spare because levers 1 and
+    //      4 are deferred (loopworks-v2-subject, GRILL entries 9 and 11).
+    'polish-4': 'forward\nturn right\ngrab\nforward\nforward\nturn left\nforward\ndrop\nturn left\nforward\nturn right\ngrab\nforward\nturn right\ndrop\nturn left\nforward\ngrab\nturn right\nforward\nturn right\ndrop\nturn left\nforward\nturn right\nforward\nforward\ngrab\nturn right\nforward\nturn right\ndrop\nturn right\nforward\nturn left\nforward\nforward\ngrab\nturn left\nforward\nturn left\ndrop',
+    'polish-5': 'forward\nturn right\ngrab\nforward\nforward\nturn left\nforward\nforward\ndrop\nturn left\nforward\nforward\nturn right\nforward\nforward\nforward\nforward\nturn right\ngrab\nforward\nforward\nturn right\nforward\nforward\ndrop\nturn left\nturn left\nforward\nturn right\nforward\nforward\nturn right\ngrab\nturn right\nforward\nforward\nturn left\nforward\ndrop\nturn left\nturn left\nforward\nforward\nturn right\ngrab\nturn right\nforward\nforward\ndrop\nturn left\nturn left\nforward\nturn right\nforward\nforward\nturn right\nforward\nforward\nforward\nforward\nforward\nturn right\ngrab\nforward\nforward\nturn right\nforward\nforward\ndrop',
     'depot-3': 'repeat 4\n  forward 3\n  turn right\nend',
     'depot-4': 'repeat 10\n  if wall ahead: turn right\n  forward 1\nend',
     'depot-5': 'forward 6\nturn right\nforward 4',

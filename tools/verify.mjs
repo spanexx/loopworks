@@ -322,7 +322,7 @@ check('app: the page loads the theme first, then the rules, every pack on disk, 
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
   const isPack = (src) => /^js\/packs\/[a-z0-9-]+\.js$/.test(src);
   const own = scripts.filter((src) => !isPack(src));
-  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/app.js', 'js/pwa.js'];
+  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/studio.js', 'js/studio-view.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/app.js', 'js/pwa.js'];
   assert(JSON.stringify(own) === JSON.stringify(expected), `the app's own scripts are ${own.join(', ')}`);
 
   const untagged = shippedScripts.filter((from) => !scripts.includes(from));
@@ -715,7 +715,8 @@ check('app: only the documented storage keys are used', () => {
     'loopworks.app.progress.v1',
     'loopworks.app.sound.v1',
     'loopworks.app.theme.v1',
-    'loopworks.app.user-packs.v1'
+    'loopworks.app.user-packs.v1',
+    'loopworks.app.words.v1'
   ].sort();
   const found = new Set();
   v1Text.forEach((file) => {
@@ -1445,6 +1446,97 @@ function fireClick(mount, target) {
   handlers.forEach((fn) => fn({ target }));
 }
 
+// WHY: the studio view is a real surface, so its check needs a DOM small enough to read and complete
+//      enough to press. This helper is not a browser: it stores text, classes, values and listeners,
+//      which is exactly what the view touches, and nothing else.
+function fakeStudioNode(tag) {
+  const node = {
+    tagName: String(tag || '').toUpperCase(),
+    children: [],
+    listeners: new Map(),
+    attrs: new Map(),
+    className: '',
+    value: '',
+    disabled: false,
+    hidden: false,
+    dataset: {},
+    parent: null,
+    _text: '',
+    appendChild(child) {
+      child.parent = node;
+      node.children.push(child);
+      return child;
+    },
+    addEventListener(type, fn) {
+      if (!node.listeners.has(type)) node.listeners.set(type, []);
+      node.listeners.get(type).push(fn);
+    },
+    setAttribute(name, value) { node.attrs.set(name, String(value)); },
+    getAttribute(name) { return node.attrs.has(name) ? node.attrs.get(name) : null; },
+    focus() { node.focused = true; },
+    fire(type, event) {
+      (node.listeners.get(type) || []).forEach((fn) => fn(event || { target: node, preventDefault() {} }));
+    },
+    classList: {
+      add(...names) {
+        const parts = node.className ? node.className.split(/\s+/) : [];
+        names.forEach((name) => { if (!parts.includes(name)) parts.push(name); });
+        node.className = parts.join(' ');
+      },
+      remove(...names) {
+        const parts = node.className ? node.className.split(/\s+/) : [];
+        node.className = parts.filter((name) => !names.includes(name)).join(' ');
+      },
+      contains(name) { return (node.className || '').split(/\s+/).includes(name); }
+    }
+  };
+  Object.defineProperty(node, 'textContent', {
+    get() { return node._text; },
+    set(value) {
+      node._text = String(value);
+      if (value === '') node.children = [];
+    }
+  });
+  return node;
+}
+
+function fakeStudioHost(initial) {
+  const store = new Map(Object.entries(initial || {}));
+  const host = {
+    console,
+    localStorage: {
+      getItem(key) { return store.has(key) ? store.get(key) : null; },
+      setItem(key, value) { store.set(key, String(value)); }
+    },
+    document: { createElement(tag) { return fakeStudioNode(tag); } }
+  };
+  host.globalThis = host;
+  host.window = host;
+  return host;
+}
+
+function collectByTag(root, tag) {
+  const found = [];
+  const wanted = String(tag).toUpperCase();
+  const walk = (node) => {
+    if (node.tagName === wanted) found.push(node);
+    (node.children || []).forEach(walk);
+  };
+  walk(root);
+  return found;
+}
+
+function findButton(root, text) {
+  return collectByTag(root, 'button').filter((button) => button.textContent === text)[0] || null;
+}
+
+function answerBlank(mount, value) {
+  const input = collectByTag(mount, 'input')[0];
+  assert(input, 'the context drew no input');
+  input.value = value;
+  input.fire('input');
+}
+
 check('app: the evidence view folds levels under their pack and never repeats the pack name', () => {
   const host = fakeEvidenceHost();
   vm.createContext(host);
@@ -1533,6 +1625,187 @@ check('app: the evidence view names the work to do and never a score', () => {
     'the evidence module speaks in scores');
   assert(/levels/.test(evidence), 'a pack line does not say how many levels it holds');
   return 'next line, search, no score';
+});
+
+check('app: the word record keeps a completed context and ignores a corrupt one', () => {
+  const host = fakeStudioHost();
+  vm.createContext(host);
+  runScript(host, path.join(v1, 'js', 'studio.js'));
+  const S = host.LoopworksStudio;
+  assert(S, 'studio.js did not define the LoopworksStudio global');
+  assert(JSON.stringify(S.CONTEXTS) === JSON.stringify(['story', 'spelling', 'dialogue', 'matching']),
+    'the context order is not the locked one');
+  let record = S.read();
+  assert(record.words && Object.keys(record.words).length === 0, 'a fresh record is not empty');
+  record = S.mark('polish', 'biuro', 'story');
+  assert(S.isDone(record, 'polish', 'biuro', 'story'), 'the mark did not land');
+  record = S.mark('polish', 'biuro', 'story');
+  assert(S.isDone(record, 'polish', 'biuro', 'story'), 'a repeated mark lost the first');
+  assert(S.isDone(S.read(), 'polish', 'biuro', 'story'), 'the mark did not survive a read');
+  host.localStorage.setItem('loopworks.app.words.v1', '{broken');
+  record = S.read();
+  assert(Object.keys(record.words).length === 0, 'a corrupt record was not ignored');
+  host.localStorage.setItem('loopworks.app.words.v1',
+    JSON.stringify({ version: 1, words: { 'polish:biuro': { story: 'yes', spelling: true, chatter: true } } }));
+  record = S.read();
+  assert(!S.isDone(record, 'polish', 'biuro', 'story'), 'a non-boolean mark was kept');
+  assert(!S.isDone(record, 'polish', 'biuro', 'chatter'), 'an unknown context was kept');
+  assert(S.isDone(record, 'polish', 'biuro', 'spelling'), 'a true mark was dropped');
+  assert(S.nextContext({ story: true }) === 'spelling', 'nextContext did not skip a done context');
+  return 'mark round-trip, corrupt ignored, order locked';
+});
+
+check('app: a met word comes from a solved level and its pack word', () => {
+  const host = fakeStudioHost();
+  vm.createContext(host);
+  runScript(host, path.join(v1, 'js', 'studio.js'));
+  const S = host.LoopworksStudio;
+  const data = {
+    en: 'office', pl: 'biuro',
+    story: [{ pl: 'Pracuję ____ biurze.', en: 'I work in an office.', answer: 'w' }],
+    match: [{ pl: 'Pracuję', en: 'I work' }, { pl: 'okien', en: 'windows' }],
+    dialog: { q: 'Gdzie pracujesz?', qGloss: 'Where do you work?', opts: ['W biurze.'], right: 0, reply: 'Dobrze.' }
+  };
+  const wordPack = {
+    id: 'polish', name: 'The Workplace', language: 'Polish', aim: 'the words of the workplace',
+    words: { biuro: data },
+    levels: [{ id: 'polish-4', word: 'biuro' }, { id: 'polish-5', word: 'biuro' }]
+  };
+  const plain = { id: 'depot', name: 'The Depot', levels: [{ id: 'depot-1' }] };
+  const broken = { id: 'user', name: 'User', language: 'Userese', words: { word: null }, levels: [{ id: 'u-1', word: 'word' }] };
+  const shelf = [wordPack, plain, broken];
+  assert(S.met(shelf, {}, {}).length === 0, 'an unsolved shelf met a word');
+  const met = S.met(shelf, { 'polish-4': { lines: 10 } }, {});
+  assert(met.length === 1 && met[0].packId === 'polish' && met[0].word === 'biuro',
+    'a solved word level did not meet its word');
+  assert(met[0].data === data, 'the met entry did not carry the pack word');
+  assert(S.met(shelf, { 'polish-4': {}, 'polish-5': {}, 'u-1': {} }, {}).length === 1,
+    'one word from two levels was listed twice');
+  const aim = S.aim(shelf, { 'polish-4': {} });
+  assert(aim && aim.language === 'Polish' && aim.target === 'the words of the workplace',
+    'the aim did not carry the pack language and target');
+  assert(Array.isArray(aim.words) && aim.words.length === 1 && aim.words[0] === 'biuro',
+    'the aim did not name the met word');
+  assert(S.aim([plain], {}) === null, 'a pack with no language produced an aim');
+  return 'met from progress, deduped, missing data skipped, aim from pack';
+});
+
+check('app: the studio walks four contexts in order and refuses Next until one is done', () => {
+  const host = fakeStudioHost();
+  vm.createContext(host);
+  runScript(host, path.join(v1, 'js', 'studio.js'));
+  runScript(host, path.join(v1, 'js', 'studio-view.js'));
+  const view = host.LoopworksStudioView;
+  assert(view, 'studio-view.js did not define the LoopworksStudioView global');
+  const data = {
+    en: 'office', pl: 'biuro',
+    story: [
+      { pl: 'Pracuję ____ biurze.', en: 'I work in an office.', answer: 'w' },
+      { pl: 'W ____ jest dużo okien.', en: 'There are many windows in the office.', answer: 'biurze' },
+      { pl: 'W biurze pracuje mój ____.', en: 'My brother works in the office.', answer: 'brat' }
+    ],
+    match: [
+      { pl: 'Pracuję', en: 'I work' },
+      { pl: 'biurze', en: 'office' },
+      { pl: 'okien', en: 'windows' }
+    ],
+    dialog: {
+      q: 'Gdzie pracujesz?', qGloss: 'Where do you work?',
+      opts: ['W biurze.', 'W szkole.'], right: 0, reply: 'Dobrze. Biuro to dobre miejsce.'
+    }
+  };
+  const met = [{ packId: 'polish', packName: 'The Workplace', word: 'biuro', data, done: {} }];
+  const marks = [];
+  const mount = fakeStudioNode('div');
+  view.render(mount, met, (...args) => marks.push(args));
+
+  assert(collectByClass(mount, 'tab').length === 0 && collectByClass(mount, 'studio-tabs').length === 0,
+    'the studio drew a tab');
+  const sentence = collectByClass(mount, 'studio-sentence')[0];
+  assert(sentence && sentence.children.some((child) => child.tagName === 'INPUT'),
+    'the story blank is not inside the sentence');
+  assert(collectByTag(mount, 'input').length === 1, 'the story drew more than the blank input');
+  assert(!findButton(mount, 'Check'), 'the story has a Check button');
+  let next = findButton(mount, 'Next');
+  assert(next && next.disabled === true, 'Next is not refused before the story is done');
+  assert(findButton(mount, 'Back').disabled === true, 'Back is offered on the first context');
+
+  ['w', 'biurze', 'brat'].forEach((answer) => answerBlank(mount, answer));
+  assert(marks.length === 1 && marks[0][2] === 'story', 'finishing the story did not mark it');
+  next = findButton(mount, 'Next');
+  assert(next.disabled === false, 'Next is still refused after the story is done');
+  next.fire('click');
+
+  assert(collectByTag(mount, 'input').length === 1, 'spelling did not draw one input');
+  answerBlank(mount, 'biuro');
+  findButton(mount, 'Check').fire('click');
+  assert(marks.some((args) => args[2] === 'spelling'), 'spelling did not mark');
+  findButton(mount, 'Next').fire('click');
+
+  findButton(mount, 'W biurze.').fire('click');
+  assert(marks.some((args) => args[2] === 'dialogue'), 'dialogue did not mark');
+  findButton(mount, 'Next').fire('click');
+
+  [['Pracuję', 'I work'], ['biurze', 'office'], ['okien', 'windows']].forEach((pair) => {
+    findButton(mount, pair[0]).fire('click');
+    findButton(mount, pair[1]).fire('click');
+  });
+  assert(marks.length === 4 && marks[3][2] === 'matching', 'matching did not mark the last context');
+  assert(findButton(mount, 'Next').disabled === true, 'Next is offered past the last context');
+  assert(findButton(mount, 'Back').disabled === false, 'Back is refused on a later context');
+  assert(collectText(mount).join(' ').includes('All four contexts are met'),
+    'the finished studio does not say the four contexts are met');
+  return 'story, spelling, dialogue, matching; blank as input; Next gated; no tabs';
+});
+
+check('app: the studio names no subject of its own', () => {
+  const tokens = new Set();
+  L.packs().forEach(({ pack }) => {
+    if (typeof pack.language === 'string' && pack.language) tokens.add(pack.language);
+    Object.keys(pack.words || {}).forEach((word) => tokens.add(word));
+    (pack.levels || []).forEach((level) => { if (level.word) tokens.add(level.word); });
+  });
+  const files = ['studio.js', 'studio-view.js'];
+  const bad = [];
+  files.forEach((name) => {
+    const src = read(path.join(v1, 'js', name));
+    tokens.forEach((token) => {
+      if (!token) return;
+      const hit = token[0] === token[0].toUpperCase()
+        ? src.includes(token)
+        : new RegExp(`\\b${token}\\b`, 'i').test(src);
+      if (hit) bad.push(`${name} names "${token}"`);
+    });
+  });
+  assert(tokens.size > 0, 'no pack carries a subject to guard');
+  assert(bad.length === 0, bad.join('; '));
+  return `${files.length} files free of ${tokens.size} subject words`;
+});
+
+check('app: the claw is one fact, and only a word level shows it', () => {
+  const host = freshContext();
+  runScript(host, path.join(v1, 'js', 'board.js'));
+  const B = host.LoopworksBoard;
+  assert(B.carried(null) === '', 'no snapshot should mean an empty claw');
+  assert(B.carried({ carries: false }) === '', 'an empty claw should read empty');
+  assert(B.carried({ carries: true, carryLabel: 'b' }) === 'b', 'a label did not read back');
+  assert(B.carried({ carries: true, carryLabel: null }) === 'crate', 'an anonymous crate did not read as a crate');
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/LoopworksBoard\.carried/.test(app), 'the controller never reads the claw');
+  assert(/clawFact\.hidden\s*=\s*!wordLevel/.test(app), 'the controller does not hide the claw fact');
+  return 'label, crate, empty, word levels only';
+});
+
+check('app: the aim band and the studio view are on the page', () => {
+  const page = read(path.join(v1, 'index.html'));
+  ['view-studio', 'studio-body', 'claw-fact', 'claw', 'aim', 'aim-line', 'aim-words'].forEach((name) => {
+    assert(new RegExp(`id="${name}"`).test(page), `the page has no #${name}`);
+  });
+  assert(/data-view="studio"/.test(page), 'the page has no Studio tab');
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/LoopworksStudio\.aim/.test(app), 'the Evidence view never asks for the aim');
+  assert(/LoopworksStudio\.met/.test(app), 'the studio view never asks for met words');
+  return 'studio tab, aim band, claw fact';
 });
 
 // WHY: reading only the theme block keeps a stray root variable from hiding a missing ramp value.
