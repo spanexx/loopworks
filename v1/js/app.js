@@ -129,8 +129,9 @@
     el.code.value = '';
     el.wherePack.textContent = pack.name;
     el.whereLevel.textContent = level.title;
-    el.goalTop.textContent = level.goalSentence;
-    el.goalStatus.textContent = level.goalSentence;
+    // WHY: a hole level's aim is a sequence, so the goal bar carries a slot for each label. The
+    //      baseline has no labels yet, so every slot starts empty.
+    renderGoal(level, baseline);
     updateLevelNav();
     // WHY: the icon says what the number is; the hint says it again in words for a screen reader
     //      or a hover.
@@ -144,6 +145,44 @@
     updateCount();
     syncGutter();
     fitBoard();
+  }
+
+  // WHY: a hole level's goal bar carries the sequence, one slot per wanted label, filled as labels
+  //      land. It never prints a fraction or a count: what is in the hole is evidence, and the
+  //      sequence is the aim (loopworks-labelled-crate, GRILL decisions 9 and 10).
+  // 2026-11-13 agent: added for the first capability v2 needs.
+  function goalSequence(level) {
+    return level && level.goal && level.goal.kind === 'hole' && Array.isArray(level.goal.sequence)
+      ? level.goal.sequence : null;
+  }
+
+  function paintGoal(mount, level, snap) {
+    mount.textContent = level.goalSentence;
+    const sequence = goalSequence(level);
+    if (!sequence) return;
+    const row = doc.createElement('span');
+    row.className = 'goal-seq';
+    // WHY: the sentence above already names the word. The slots are the same aim drawn once, so a
+    //      screen reader gets one copy rather than a row of empty boxes.
+    row.setAttribute('aria-hidden', 'true');
+    const landed = snap && Array.isArray(snap.hole) ? snap.hole : [];
+    sequence.forEach((label, index) => {
+      const slot = doc.createElement('span');
+      slot.className = 'goal-slot';
+      if (landed[index]) {
+        slot.classList.add('is-landed');
+        slot.textContent = landed[index];
+      }
+      row.appendChild(slot);
+    });
+    mount.appendChild(doc.createTextNode(' '));
+    mount.appendChild(row);
+  }
+
+  function renderGoal(level, snap) {
+    if (!level) return;
+    paintGoal(el.goalTop, level, snap);
+    paintGoal(el.goalStatus, level, snap);
   }
 
   // WHY: the line runs through both packs, in shelf order, so the arrow after the last depot level
@@ -345,6 +384,7 @@
     const status = machine.tick();
     const snapshot = machine.world();
     if (snapshot) LoopworksBoard.render(el.board, snapshot, level);
+    if (snapshot) renderGoal(level, snapshot);
     updateFuel(snapshot);
     const event = machine.events[machine.events.length - 1];
     if (event) updateLog(event);
@@ -381,6 +421,7 @@
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
+      renderGoal(level, baseline);
       resetLog();
       updateFuel(baseline);
       if (machine.error) {
@@ -400,6 +441,7 @@
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
+      renderGoal(level, baseline);
       resetLog();
       updateFuel(baseline);
       if (machine.error) {
@@ -415,6 +457,7 @@
     pause();
     machine = null;
     LoopworksBoard.render(el.board, baseline, level);
+    renderGoal(level, baseline);
     resetLog();
     updateFuel(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
@@ -441,6 +484,7 @@
     pause();
     machine = null;
     LoopworksBoard.render(el.board, baseline, level);
+    renderGoal(level, baseline);
     resetLog();
     updateFuel(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
