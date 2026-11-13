@@ -210,6 +210,8 @@ button { cursor: pointer; }
 
 body.is-evidence .tools { display: none; }
 
+body.is-studio .tools { display: none; }
+
 /* WHY: the level is named once. On wide screens the name and the goal sit in the top bar; below
    900 px the bar drops every word for icons, as the learner asked, so the name leaves with them. */
 .goal-top {
@@ -225,6 +227,8 @@ body.is-evidence .tools { display: none; }
 }
 
 body.is-evidence .goal-top { display: none; }
+
+body.is-studio .goal-top { display: none; }
 
 /* WHY: a hole level's aim is a sequence. Each slot is drawn in the goal bar and filled as a label
    lands; the row never prints a count or a fraction (loopworks-labelled-crate, GRILL 9 and 10). */
@@ -1097,6 +1101,157 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 .evidence-more { margin: 0; padding: 14px 6px; font: 11px var(--mono); color: var(--muted); }
 
 .evidence-empty { margin: 0; padding: 22px 6px; font-size: 13px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- the aim and the word studio */
+
+/* WHY: the aim is one named target, not a meter. A quiet band above the rows carries the pack's own
+   language and words, so the view answers "what am I here for" without turning the record into a score. */
+.aim {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--signal);
+  background: var(--panel);
+}
+
+.aim-line { margin: 5px 0 3px; font-size: 15px; color: var(--ink); }
+
+.aim-words { margin: 0; font: 12px var(--mono); color: var(--amber-ink); }
+
+.studio { flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
+
+.studio-inner { max-width: 760px; margin: 0 auto; padding: 40px 24px 60px; }
+
+.studio-head h1 {
+  margin: 10px 0 8px;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: -.02em;
+  font-weight: 600;
+}
+
+.studio-head p {
+  margin: 0 0 24px;
+  max-width: 620px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.studio-card {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+}
+
+.studio-word-pl { font-size: 24px; font-weight: 600; color: var(--ink); }
+
+.studio-word-en { font: 12px var(--mono); color: var(--amber-ink); }
+
+.studio-words { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+
+.studio-word {
+  padding: 5px 10px;
+  border: 1px solid var(--btn-edge);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  font: 12px var(--mono);
+  cursor: pointer;
+}
+
+.studio-word[aria-pressed="true"] { border-color: var(--signal); color: var(--signal); }
+
+.studio-step {
+  margin: 14px 0 10px;
+  font: 10px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.studio-exercise { padding: 8px 2px 6px; border-top: 1px solid var(--edge); }
+
+.studio-sentence { margin: 8px 0; font-size: 20px; line-height: 2; color: var(--ink); }
+
+/* WHY: the blank is the input, drawn as part of the sentence. It is a line of the sentence, not a box
+   beside it, because the learner rejected "read, then fill in" as two tasks. */
+.studio-blank {
+  min-width: 5ch;
+  max-width: 22ch;
+  padding: 2px 6px;
+  border: 0;
+  border-bottom: 2px solid var(--signal);
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+}
+
+.studio-blank:focus { outline: none; border-bottom-color: var(--amber-ink); }
+
+.studio-blank.is-wrong { border-bottom-color: var(--danger); }
+
+.studio-gloss { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+
+.studio-prompt { margin: 6px 0 14px; font-size: 15px; color: var(--ink); }
+
+.studio-question { margin: 8px 0 0; font-size: 19px; color: var(--ink); }
+
+.studio-choices { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 0; max-width: 440px; }
+
+.studio-btn,
+.studio-choice,
+.studio-pair {
+  padding: 8px 12px;
+  border: 1px solid var(--btn-edge);
+  border-radius: 2px;
+  background: var(--btn);
+  color: var(--ink);
+  font: 12px var(--mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.studio-btn {
+  min-width: 84px;
+  text-align: center;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.studio-btn:hover:not(:disabled),
+.studio-choice:hover,
+.studio-pair:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+
+.studio-btn:disabled,
+.studio-pair:disabled { opacity: .45; cursor: default; }
+
+.studio-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 8px 0 0; }
+
+.studio-column-name {
+  margin: 0 0 8px;
+  font: 10px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.studio-list { display: flex; flex-direction: column; gap: 6px; }
+
+.studio-pair { width: 100%; }
+
+.studio-pair.is-picked { border-color: var(--signal); color: var(--signal); }
+
+.studio-done { margin: 8px 0; font-size: 15px; color: var(--green); }
+
+.studio-say { min-height: 20px; margin: 12px 0 0; font: 12px var(--mono); color: var(--amber-ink); }
+
+.studio-actions { display: flex; gap: 10px; margin-top: 18px; }
+
+.studio-empty { margin: 0; padding: 22px 2px; font-size: 13px; color: var(--muted); }
 
 /* ---------------------------------------------------------------- the door to the shelf */
 

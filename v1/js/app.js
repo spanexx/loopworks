@@ -20,11 +20,14 @@
   const LoopworksEvidence = host.LoopworksEvidence;
   const LoopworksWords = host.LoopworksWords;
   const LoopworksSound = host.LoopworksSound;
+  const LoopworksStudio = host.LoopworksStudio;
+  const LoopworksStudioView = host.LoopworksStudioView;
 
   function id(name) { return doc.getElementById(name); }
   const el = {
     viewWork: id('view-work'),
     viewEvidence: id('view-evidence'),
+    viewStudio: id('view-studio'),
     wherePack: id('where-pack'),
     whereLevel: id('where-level'),
     prevLevel: id('prev-level'),
@@ -35,6 +38,8 @@
     budget: id('budget'),
     fuelFact: id('fuel-fact'),
     fuel: id('fuel'),
+    clawFact: id('claw-fact'),
+    claw: id('claw'),
     wordsOpen: id('words-open'),
     wordsModal: id('words-modal'),
     wordsClose: id('words-close'),
@@ -70,7 +75,11 @@
     evidenceList: id('evidence-list'),
     evidenceSearch: id('evidence-search'),
     evidenceNext: id('evidence-next'),
-    evidenceNextName: id('evidence-next-name')
+    evidenceNextName: id('evidence-next-name'),
+    aim: id('aim'),
+    aimLine: id('aim-line'),
+    aimWords: id('aim-words'),
+    studioBody: id('studio-body')
   };
   const tabs = Array.prototype.slice.call(doc.querySelectorAll('.tab'));
 
@@ -102,6 +111,9 @@
   let logOpen = false;
   let view = 'work';
   let wordsWord = '';
+  // WHY: the studio's marks are read once and kept in step with every write, so drawing the studio
+  //      never has to touch storage and a finished context survives the view being rebuilt.
+  let wordsRecord = LoopworksStudio.read();
 
   const sug = { items: [], index: 0, from: 0, lineEnd: 0, dismissed: false };
   const MIN_PROGRAM = 180;
@@ -141,10 +153,23 @@
     LoopworksBoard.render(el.board, baseline, level);
     resetLog();
     updateFuel(baseline);
+    updateClaw(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
     updateCount();
     syncGutter();
     fitBoard();
+  }
+
+  // WHY: the claw fact belongs to a level that carries a word and to no other. It shows the label the
+  //      drone holds, "crate" for an unlabelled one, and "nothing" with an empty claw - a fact about
+  //      this run, never a count or a rating. Keeping the fact in one function means every place that
+  //      repaints the board paints the claw with the same rule.
+  // 2026-11-13 agent: added for the v2 word pack, following GRILL-loopworks-v2-subject entry 10.
+  function updateClaw(snapshot) {
+    const wordLevel = !!(level && level.word);
+    el.clawFact.hidden = !wordLevel;
+    if (!wordLevel) return;
+    el.claw.textContent = LoopworksBoard.carried(snapshot) || 'nothing';
   }
 
   // WHY: a hole level's goal bar carries the sequence, one slot per wanted label, filled as labels
@@ -386,6 +411,7 @@
     if (snapshot) LoopworksBoard.render(el.board, snapshot, level);
     if (snapshot) renderGoal(level, snapshot);
     updateFuel(snapshot);
+    updateClaw(snapshot);
     const event = machine.events[machine.events.length - 1];
     if (event) updateLog(event);
     if (status.done) finish(status);
@@ -424,6 +450,7 @@
       renderGoal(level, baseline);
       resetLog();
       updateFuel(baseline);
+      updateClaw(baseline);
       if (machine.error) {
         setVerdict('stuck', 'Stuck', `parse error - ${machine.error}`, WARN);
         cue('code');
@@ -444,6 +471,7 @@
       renderGoal(level, baseline);
       resetLog();
       updateFuel(baseline);
+      updateClaw(baseline);
       if (machine.error) {
         setVerdict('stuck', 'Stuck', `parse error - ${machine.error}`, WARN);
         cue('code');
@@ -460,6 +488,7 @@
     renderGoal(level, baseline);
     resetLog();
     updateFuel(baseline);
+    updateClaw(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
   }
 
@@ -487,6 +516,7 @@
     renderGoal(level, baseline);
     resetLog();
     updateFuel(baseline);
+    updateClaw(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
     updateCount();
     syncGutter();
@@ -854,9 +884,27 @@
   //      the controls cannot drift apart. The search value is passed in, which keeps the module
   //      testable without a DOM event.
   function renderEvidence() {
+    renderAim();
     LoopworksEvidence.render(el.evidenceList, shelf, progress, pick,
       el.evidenceSearch ? el.evidenceSearch.value : '');
     paintEvidenceNext();
+  }
+
+  // WHY: the aim is one named target above the evidence rows: the pack's own language and its own name
+  //      for the target, then the words met so far. It is read from pack data and the progress record,
+  //      so no subject string lives here, and nothing is counted, ranked or turned into a bar.
+  // 2026-11-13 agent: added for the v2 word pack, following GRILL-loopworks-v2-subject entry 4.
+  function renderAim() {
+    const aim = LoopworksStudio.aim(shelf, progress);
+    if (!aim) {
+      el.aim.hidden = true;
+      return;
+    }
+    el.aim.hidden = false;
+    el.aimLine.textContent = aim.target
+      ? `${aim.language} - ${aim.target}`
+      : aim.language;
+    el.aimWords.textContent = aim.words.length ? aim.words.join(', ') : 'No word met yet.';
   }
 
   function paintEvidenceNext() {
@@ -872,12 +920,14 @@
   }
 
   function showView(name) {
-    const next = name === 'evidence' ? 'evidence' : 'work';
-    if (view === 'work' && next === 'evidence') pause();
+    const next = name === 'evidence' ? 'evidence' : name === 'studio' ? 'studio' : 'work';
+    if (view === 'work' && next !== 'work') pause();
     view = next;
     doc.body.classList.toggle('is-evidence', next === 'evidence');
+    doc.body.classList.toggle('is-studio', next === 'studio');
     el.viewWork.hidden = next !== 'work';
     el.viewEvidence.hidden = next !== 'evidence';
+    el.viewStudio.hidden = next !== 'studio';
     tabs.forEach((tab) => {
       const on = tab.dataset.view === next;
       tab.classList.toggle('is-on', on);
@@ -886,9 +936,23 @@
     updateLevelNav();
     if (next === 'evidence') {
       renderEvidence();
+    } else if (next === 'studio') {
+      renderStudio();
     } else {
       fitBoard();
     }
+  }
+
+  // WHY: the view is redrawn from the one record every time it is opened, so a word solved on a level
+  //      appears in the studio without a reload, and a finished context is still finished. The callback
+  //      is the only write: the view never touches storage, and the controller never redraws it
+  //      mid-exercise - doing that would throw away the sentence being typed.
+  // 2026-11-13 agent: added for the v2 word pack, following GRILL-loopworks-v2-subject entry 11.
+  function renderStudio() {
+    const met = LoopworksStudio.met(shelf, progress, wordsRecord);
+    LoopworksStudioView.render(el.studioBody, met, (packId, word, context) => {
+      wordsRecord = LoopworksStudio.mark(packId, word, context);
+    });
   }
 
   function pick(packId, levelId) {
