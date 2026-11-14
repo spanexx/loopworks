@@ -1716,8 +1716,9 @@ check('app: the studio walks four contexts in order and refuses Next until one i
   };
   const met = [{ packId: 'polish', packName: 'The Workplace', word: 'biuro', data, done: {} }];
   const marks = [];
+  const exits = [];
   const mount = fakeStudioNode('div');
-  view.render(mount, met, (...args) => marks.push(args));
+  view.render(mount, met, (...args) => marks.push(args), () => exits.push('done'));
 
   assert(collectByClass(mount, 'tab').length === 0 && collectByClass(mount, 'studio-tabs').length === 0,
     'the studio drew a tab');
@@ -1751,11 +1752,15 @@ check('app: the studio walks four contexts in order and refuses Next until one i
     findButton(mount, pair[1]).fire('click');
   });
   assert(marks.length === 4 && marks[3][2] === 'matching', 'matching did not mark the last context');
-  assert(findButton(mount, 'Next').disabled === true, 'Next is offered past the last context');
-  assert(findButton(mount, 'Back').disabled === false, 'Back is refused on a later context');
+  assert(findButton(mount, 'Next') === null, 'Next is still offered after the fourth context');
+  assert(findButton(mount, 'Back') === null, 'Back is still the only control after the fourth context');
+  const done = findButton(mount, 'Done');
+  assert(done, 'the finished studio offers no Done');
+  done.fire('click');
+  assert(exits.length === 1, 'Done did not end the studio');
   assert(collectText(mount).join(' ').includes('All four contexts are met'),
     'the finished studio does not say the four contexts are met');
-  return 'story, spelling, dialogue, matching; blank as input; Next gated; no tabs';
+  return 'story, spelling, dialogue, matching; blank as input; Next gated; Done ends it; no tabs';
 });
 
 check('app: the studio names no subject of its own', () => {
@@ -1794,6 +1799,25 @@ check('app: the claw is one fact, and only a word level shows it', () => {
   assert(/LoopworksBoard\.carried/.test(app), 'the controller never reads the claw');
   assert(/clawFact\.hidden\s*=\s*!wordLevel/.test(app), 'the controller does not hide the claw fact');
   return 'label, crate, empty, word levels only';
+});
+
+check('app: the studio opens after a solve with work left, and Done returns to Work', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  assert(/function offerStudio\(/.test(app), 'the controller has no way to offer the studio');
+  const write = app.indexOf('progress = LoopworksEvidence.writeEntry(level.id, entry)');
+  const ask = app.indexOf('const met = level.word ? LoopworksStudio.met(shelf, progress, wordsRecord) : []');
+  assert(write >= 0, 'the controller no longer writes the solved entry');
+  assert(ask > write, 'the solved word is not read back before the offer');
+  assert(/nextContext\(metWord\.done\)/.test(app), 'the offer does not wait for studio work to remain');
+  assert(/if \(metWord && LoopworksStudio\.nextContext\(metWord\.done\)\) offerStudio\(\);/.test(app),
+    'a solve with studio work left does not offer the studio');
+  assert(/host\.setTimeout\(/.test(app) && /host\.clearTimeout\(/.test(app), 'the offer cannot be cancelled');
+  assert(/if \(view !== 'work' \|\| running\) return;/.test(app), 'the offer can steal a screen the learner chose');
+  assert(/studioOffered\.has\(wordKey\)/.test(app), 'the same word can pull the learner out twice');
+  assert(/showView\('studio'\)/.test(app), 'the offer never opens the studio');
+  assert(/LoopworksStudioView\.render\(el\.studioBody, met,[\s\S]*?\(\) => showView\('work'\)\)/.test(app),
+    'the studio has no exit back to Work');
+  return 'only with work left, once per word, cancellable pause, Done returns to Work';
 });
 
 check('app: the aim band and the studio view are on the page', () => {

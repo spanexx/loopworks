@@ -111,6 +111,11 @@
   let logOpen = false;
   let view = 'work';
   let wordsWord = '';
+  // WHY: the studio is offered once a word is solved with contexts still to do. The handle is kept so
+  //      a level change, a reset or a new run can cancel the offer before it moves the screen; the set
+  //      remembers the words already offered in this page session.
+  let studioOffer = null;
+  const studioOffered = new Set();
   // WHY: the studio's marks are read once and kept in step with every write, so drawing the studio
   //      never has to touch storage and a finished context survives the view being rebuilt.
   let wordsRecord = LoopworksStudio.read();
@@ -118,6 +123,9 @@
   const sug = { items: [], index: 0, from: 0, lineEnd: 0, dismissed: false };
   const MIN_PROGRAM = 180;
   const DEFAULT_PROGRAM = 280;
+  // WHY: a solved word level has just brought its word back; the studio is where the word is met
+  //      again. The pause lets the verdict and the filled goal be read before the screen changes.
+  const STUDIO_OFFER = 1400;
   // WHY: on a phone the drawer is one row with the buttons beside the line, so its resting height
   //      is that one line - the 42 px editor and the drawer's bottom padding - and the learner
   //      pulls it taller from there instead of starting from a box three lines deep.
@@ -128,6 +136,7 @@
 
   function openLevel(nextPack, nextLevel) {
     pause();
+    cancelStudioOffer();
     pack = nextPack;
     level = nextLevel;
     machine = null;
@@ -430,6 +439,12 @@
       progress = LoopworksEvidence.writeEntry(level.id, entry);
       const over = status.linesUsed > level.budget ? ', over budget' : '';
       setVerdict('solved', 'Solved', `${status.linesUsed} of ${level.budget} lines${over}`, CHECK);
+      // WHY: a solve is the moment the word is revisited, but the studio is offered only when it still
+      //      has a context to do. That keeps a finished studio from interrupting practice, and it also
+      //      reaches a save that solved the board before auto-open existed.
+      const met = level.word ? LoopworksStudio.met(shelf, progress, wordsRecord) : [];
+      const metWord = met.find((item) => item.packId === pack.id && item.word === level.word);
+      if (metWord && LoopworksStudio.nextContext(metWord.done)) offerStudio();
     } else {
       const last = machine.events[machine.events.length - 1];
       let detail = status.reason;
@@ -441,9 +456,38 @@
     cue(endingCue(status));
   }
 
+  function cancelStudioOffer() {
+    if (studioOffer === null) return;
+    host.clearTimeout(studioOffer);
+    studioOffer = null;
+  }
+
+  // WHY: a solved word level is followed by the word studio, where the word is met again. The offer
+  //      waits a short beat so the Verdict and the filled goal can be read, and it lapses if the
+  //      learner changes level, view, program or run before it fires. It is made at most once per word
+  //      in a page session, so reviewing a solution never pulls the same learner out twice.
+  function offerStudio() {
+    cancelStudioOffer();
+    const offeredPack = pack.id;
+    const offeredLevel = level.id;
+    const wordKey = `${pack.id}:${level.word}`;
+    studioOffer = host.setTimeout(() => {
+      studioOffer = null;
+      if (view !== 'work' || running) return;
+      if (!pack || pack.id !== offeredPack || !level || level.id !== offeredLevel) return;
+      // WHY: the offered run must still be the run on screen. A reset or a new program leaves no
+      //      solved machine, and the offer silently lapses.
+      if (!machine || !machine.status.done || machine.status.status !== 'solved') return;
+      if (studioOffered.has(wordKey)) return;
+      studioOffered.add(wordKey);
+      showView('studio');
+    }, STUDIO_OFFER);
+  }
+
   function startRun() {
     if (running) { pause(); return; }
     closeKeyboard();
+    cancelStudioOffer();
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -465,6 +509,7 @@
 
   function stepOnce() {
     pause();
+    cancelStudioOffer();
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -483,6 +528,7 @@
 
   function resetRun() {
     pause();
+    cancelStudioOffer();
     machine = null;
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
@@ -511,6 +557,7 @@
   //      and the trace clears. The program itself is never saved or thrown away.
   function programChanged() {
     pause();
+    cancelStudioOffer();
     machine = null;
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
@@ -921,6 +968,7 @@
 
   function showView(name) {
     const next = name === 'evidence' ? 'evidence' : name === 'studio' ? 'studio' : 'work';
+    cancelStudioOffer();
     if (view === 'work' && next !== 'work') pause();
     view = next;
     doc.body.classList.toggle('is-evidence', next === 'evidence');
@@ -952,7 +1000,7 @@
     const met = LoopworksStudio.met(shelf, progress, wordsRecord);
     LoopworksStudioView.render(el.studioBody, met, (packId, word, context) => {
       wordsRecord = LoopworksStudio.mark(packId, word, context);
-    });
+    }, () => showView('work'));
   }
 
   function pick(packId, levelId) {

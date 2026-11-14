@@ -2,10 +2,13 @@
 //      file owns the screen and no storage: it paints what the model hands it, calls back when a context
 //      is finished, and never decides what is remembered. The blank is the input in the story, the two
 //      matching columns do not line up, and there are no tabs - a learner walks the four contexts in
-//      order, with Back to review and a Next that waits until the current one is done.
+//      order, with Back to review and a Next that waits until the current one is done. The fourth
+//      context is the end of the walk: one Done returns to Work instead of leaving Back as a dead end.
 // PACK: loopworks-app
 // 2026-11-13 agent: first build, following GRILL-loopworks-v2-subject entries 8, 10 and 11 and
 //      PRD-TRD-loopworks-v2-subject scenarios 4-8.
+// 2026-11-13 agent: four contexts met now ends in one Done, following the learner's same-day direction
+//      ("when i finish the 4th stage end it, now it just says back").
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -44,7 +47,7 @@
   // WHY: no screen in this file may name a subject. A word, a sentence, a pair, a question and its
   //      options all arrive from the pack, and the only words this file knows are its own four context
   //      names and the plain refusals a learner reads. That is what keeps a second language a data file.
-  function render(mount, met, onDone) {
+  function render(mount, met, onDone, onExit) {
     if (!mount || !doc) return;
     const entries = Array.isArray(met) ? met.filter((entry) => entry && entry.data) : [];
     const state = {
@@ -311,6 +314,18 @@
 
     function paintActions(root) {
       const actions = node('div', 'studio-actions');
+      // WHY: once every context is met there is nothing left to walk, so Back and Next give way to one
+      //      Done. Done is the end of the studio, not another step inside it: it hands control back to
+      //      the screen that opened the studio, which is where the learner picks up the next level.
+      if (allDone()) {
+        const done = press('Done');
+        done.addEventListener('click', () => {
+          if (onExit) onExit();
+        });
+        actions.appendChild(done);
+        root.appendChild(actions);
+        return;
+      }
       const back = press('Back');
       back.disabled = state.index === 0;
       back.addEventListener('click', () => {
