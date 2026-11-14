@@ -177,6 +177,8 @@
       '- Another level asks for the meaning, not the word, and may add decoy letter crates and pillars.',
       '- Every level that carries a word names it in a "word" field, and its goal sequence spells that word exactly.',
       '- Every letter of the sequence must sit on a labelled crate. Decoy crates may carry letters the word does not use.',
+      '- Place each crate where the drone can reach it without walking through another crate first. A crate on the walking path blocks movement, so put crates on a separate row or in positions the drone approaches from the side, like the example above.',
+      '- Check that the drone can walk from its start to every crate and to the hole without hitting a wall or an ungrabbed crate.',
       '- Add a field named proof holding a program you have checked wins the level inside its budget.',
       '- Add a field named traps: programs a learner might wrongly try, each of which must lose inside its budget.'
     ].join('\n'));

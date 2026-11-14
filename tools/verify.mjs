@@ -2447,7 +2447,7 @@ check('app: the word prompt asks for a word lesson around the learner\'s word', 
     'the word prompt does not ask for the two-board minimum and the four-level ceiling');
   ['language:', 'aim:', 'words:', 'story', 'match', 'dialog', 'forms',
     'label, to, en, why and use', 'fresh sentence', 'precise meaning',
-    '"kind": "hole"', '"sequence"', '[x, y, "letter"]', 'decoy', 'Word studio'].forEach((piece) => {
+    '"kind": "hole"', '"sequence"', '[x, y, "letter"]', 'decoy', 'Word studio', 'blocks movement'].forEach((piece) => {
     assert(text.includes(piece), `the word prompt never names "${piece}"`);
   });
   assert(/goal sequence spells that word exactly/.test(text), 'the word prompt does not tie the goal to the word');
