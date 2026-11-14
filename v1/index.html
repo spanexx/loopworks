@@ -185,7 +185,7 @@
           <div class="studio-head">
             <div class="kicker">Studio</div>
             <h1>Meet the word again</h1>
-            <p>Each word a level carries comes back here in four contexts, one at a time: its story, its spelling, a short exchange, and the words that story used. Finish one to reach the next; Back lets you read a finished one again.</p>
+            <p>Each word a level carries comes back here, one context at a time: its story, its spelling, the forms it takes, a short exchange, and the words that story used. A word that does not change skips the forms. Finish one to reach the next; Back lets you read a finished one again.</p>
           </div>
           <div class="studio-body" id="studio-body"></div>
         </div>
@@ -237,6 +237,11 @@
         </button>
       </div>
       <p class="pack-add-intro">Copy the prompt and paste it into any chat model to get a level pack written for you, then paste the answer back here or pick the .json file it gives you. A pack is the same shape the atlas writes, with the code wrapper taken out. What you add stays in this browser - there is no server to send it to.</p>
+      <div class="pack-add-word">
+        <label class="pack-add-word-label" for="pack-word">The word you are learning</label>
+        <input type="text" class="pack-add-word-input" id="pack-word" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="word - language - meaning">
+        <p class="pack-add-word-hint">Filled in, the prompt asks for a word lesson around it. Empty, it asks for the logic pack it always has.</p>
+      </div>
       <textarea class="pack-add-text" id="pack-add-text" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="The level pack" placeholder='{ "id": "my-yard", "name": "My Yard", "levels": [ { } ] }'></textarea>
       <div class="pack-add-foot">
         <input type="file" class="pack-add-file" id="pack-add-file" accept="application/json,.json" aria-label="Pick a .json level pack">

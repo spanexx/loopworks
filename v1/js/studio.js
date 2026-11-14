@@ -1,4 +1,4 @@
-// WHY: a met word is worked through four contexts, and the only thing worth remembering is which of
+// WHY: a met word is worked through its contexts, and the only thing worth remembering is which of
 //      them are finished. That is one small record on this machine and nothing else - no account, no
 //      server, no key. This file is the model: it reads and writes that record, decides which words a
 //      learner has met from the progress record, and builds the aim line. It touches no screen, so a
@@ -6,15 +6,19 @@
 // PACK: loopworks-app
 // 2026-11-13 agent: first build, following GRILL-loopworks-v2-subject entries 10 and 11 and
 //      PRD-TRD-loopworks-v2-subject scenarios 2, 9 and 10.
+// 2026-11-14 agent: Forms added as the fifth Context, walked third, following
+//      GRILL-loopworks-word-lessons entries 5 to 8 and 11. A Word with no Form keeps four contexts.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
   const KEY = 'loopworks.app.words.v1';
 
   // WHY: the order is the lesson, not a menu. Story gives the word its situation, spelling asks for it
-  //      from its meaning, dialogue hears it in use, and matching sorts the words of the story. The
-  //      studio reads this list and never offers a tab that jumps over a context.
-  const CONTEXTS = ['story', 'spelling', 'dialogue', 'matching'];
+  //      from its meaning, forms explains how it changes, dialogue hears it in use, and matching sorts
+  //      the words of the story. Forms sits third so the learner meets the pair before dialogue and
+  //      matching ask him to use it. The studio reads this list and never offers a tab that jumps over
+  //      a context.
+  const CONTEXTS = ['story', 'spelling', 'forms', 'dialogue', 'matching'];
 
   function emptyRecord() {
     return { version: 1, words: {} };
@@ -79,10 +83,25 @@
     return record;
   }
 
-  function nextContext(done) {
+  // WHY: a Word that changes carries Forms; a Word that does not carries none. Applicability is read
+  //      from the Word's own data - not a global flag and not a language name - so the model stays
+  //      subject-blind and a pack decides what its word needs.
+  function hasForms(data) {
+    return !!(data && Array.isArray(data.forms) && data.forms.length > 0);
+  }
+
+  function contexts(data) {
+    return CONTEXTS.filter((context) => context !== 'forms' || hasForms(data));
+  }
+
+  // WHY: the next thing to do is the first unfinished Context in this Word's own walk. A Word with no
+  //      Forms never offers one, and a Word that gains Forms later has an unfinished Context again, so
+  //      the studio offers it once more.
+  function nextContext(done, data) {
     const marks = done || {};
-    for (let i = 0; i < CONTEXTS.length; i += 1) {
-      if (marks[CONTEXTS[i]] !== true) return CONTEXTS[i];
+    const walk = contexts(data);
+    for (let i = 0; i < walk.length; i += 1) {
+      if (marks[walk[i]] !== true) return walk[i];
     }
     return null;
   }
@@ -139,5 +158,5 @@
     return { language: pack.language, target: typeof pack.aim === 'string' ? pack.aim : '', words };
   }
 
-  host.LoopworksStudio = { key: KEY, CONTEXTS, read, mark, isDone, nextContext, met, aim };
+  host.LoopworksStudio = { key: KEY, CONTEXTS, hasForms, contexts, read, mark, isDone, nextContext, met, aim };
 })();

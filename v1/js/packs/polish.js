@@ -34,9 +34,25 @@
           { pl: 'W ____ jest dużo okien.', en: 'There are many windows in the office.', answer: 'biurze' },
           { pl: 'W biurze pracuje mój ____.', en: 'My brother works in the office.', answer: 'brat' }
         ],
+        // WHY: the Word studio teaches the change as pack data: the base is this Word's own pl, so it
+        //      is not repeated here, and the use sentence is fresh - no line of the story above - so
+        //      passing it proves the change transfers. The studio names no language or case of its own.
+        forms: [
+          {
+            label: 'locative',
+            to: 'biurze',
+            en: 'in the office',
+            why: 'When the word comes after a preposition such as "w" (in) or "o" (about), Polish puts it in the locative: the ending -o becomes -e, and the r softens to rz.',
+            use: { pl: 'Rozmawiamy o ____ przez telefon.', en: 'We are talking about the office on the phone.', answer: 'biurze' }
+          }
+        ],
+        // WHY: the base and the changed form carry different meanings here. Before this, both said
+        //      "office", which is the confusion the learner named; the pair is part of teaching the
+        //      change, not a separate lesson.
         match: [
           { pl: 'Pracuję', en: 'I work' },
-          { pl: 'biurze', en: 'office' },
+          { pl: 'biuro', en: 'office' },
+          { pl: 'biurze', en: 'in the office' },
           { pl: 'dużo', en: 'many' },
           { pl: 'okien', en: 'windows' },
           { pl: 'jest', en: 'is' },
