@@ -146,15 +146,17 @@
       },
       {
         // WHY: the second board is the same word with the decoy lever spent - two letters the word does
-        //      not use - and two pillars that make the spelling order fight the geometry. The goal still
-        //      names the word, because lever 5 is deferred (GRILL entries 9 and 11).
+        //      not use - and two pillars that make the spelling order fight the geometry. It also spends
+        //      lever 5: the word was met on polish-4 and in the studio, so the goal gives only its
+        //      meaning (GRILL entries 9 and 11, amended by the learner on 2026-11-13). Its title must not
+        //      name the word either, because the top bar shows it before the first letter is carried.
         id: 'polish-5',
-        title: 'Drugie biuro',
+        title: 'Drugie podejscie',
         teaches: 'sequence',
         word: 'biuro',
         budget: 90,
         goal: { kind: 'hole', sequence: ['b', 'i', 'u', 'r', 'o'] },
-        goalSentence: 'Carry each letter into the hole, in order, and spell biuro - the pillars are in your way.',
+        goalSentence: 'Carry each letter into the hole, in order, and spell the Polish word for office - the pillars are in your way.',
         teachesSentence: 'Decoy crates carry letters the word does not use; the hole refuses them and the claw keeps them.',
         rows: [
           '###########',
