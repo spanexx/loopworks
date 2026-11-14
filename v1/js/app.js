@@ -64,6 +64,7 @@
     program: id('program'),
     editor: id('editor'),
     gutter: id('gutter'),
+    overlay: id('editor-overlay'),
     code: id('code'),
     suggest: id('suggest'),
     lineCount: id('line-count'),
@@ -108,6 +109,8 @@
   let machine = null;
   let failedLine = 0;
   let currentLine = 0;
+  let executionCounts = {};
+  let runSolved = false;
   let timer = null;
   let running = false;
   let logOpen = false;
@@ -425,7 +428,7 @@
     updateClaw(snapshot);
     const event = machine.events[machine.events.length - 1];
     if (event) updateLog(event);
-    if (event) { currentLine = event.line; syncGutter(); }
+    if (event) { executionCounts[event.line] = (executionCounts[event.line] || 0) + 1; currentLine = event.line; syncGutter(); }
     if (status.done) finish(status);
     else if (event) cue(tickCue(event));
   }
@@ -444,6 +447,7 @@
       setVerdict('solved', 'Solved', `${status.linesUsed} of ${level.budget} lines${over}`, CHECK);
       failedLine = 0;
       currentLine = 0;
+      runSolved = true;
       syncGutter();
       // WHY: a solve is the moment the word is revisited, but the studio is offered only when it still
       //      has a context to do. That keeps a finished studio from interrupting practice, and it also
@@ -457,6 +461,7 @@
       if (status.reason === 'program ended') detail = 'program ended - the goal is not met';
       else if (last) { detail = `${status.reason} at line ${last.line}`; failedLine = last.line; }
       currentLine = 0;
+      runSolved = false;
       setVerdict('stuck', 'Stuck', detail, WARN);
       syncGutter();
     }
@@ -498,6 +503,8 @@
     cancelStudioOffer();
     failedLine = 0;
     currentLine = 0;
+    executionCounts = {};
+    runSolved = false;
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -543,6 +550,8 @@
     machine = null;
     failedLine = 0;
     currentLine = 0;
+    executionCounts = {};
+    runSolved = false;
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
     resetLog();
@@ -561,15 +570,20 @@
   // WHY: the gutter is the only place a run can leave a mark on the source. While a run is live, the
   //      line being executed is marked so the learner sees where the machine is. When a run stops on a
   //      line, that line is painted in the danger colour and every line after it is dimmed, so the
-  //      learner sees where the code stopped and which lines never ran. A clean gutter means the last
-  //      run either solved, never started, or was edited away.
+  //      learner sees where the code stopped and which lines never ran. On a solved run every line that
+  //      ran is marked green. A line that ran more than once carries its count. A clean gutter means
+  //      the last run either never started or was edited away.
   function syncGutter() {
     const count = el.code.value.split('\n').length;
     const fl = (failedLine >= 1 && failedLine <= count) ? failedLine : 0;
     const cl = (!fl && currentLine >= 1 && currentLine <= count) ? currentLine : 0;
-    if (!fl && !cl) {
+    const solved = (!fl && !cl && runSolved);
+    if (!fl && !cl && !solved) {
       const numbers = [];
-      for (let n = 1; n <= count; n += 1) numbers.push(n);
+      for (let n = 1; n <= count; n += 1) {
+        const c = executionCounts[n] || 0;
+        numbers.push(c > 1 ? n + '\u00d7' + c : String(n));
+      }
       el.gutter.textContent = numbers.join('\n');
       el.gutter.scrollTop = el.code.scrollTop;
       return;
@@ -577,16 +591,40 @@
     const html = [];
     for (let n = 1; n <= count; n += 1) {
       let cls = 'gutter-num';
+      const cnt = executionCounts[n] || 0;
       if (fl) {
         if (n === fl) cls += ' gutter-fail';
+        else if (n < fl && cnt > 0) cls += ' gutter-pass';
         else if (n > fl) cls += ' gutter-skip';
-      } else if (n === cl) {
-        cls += ' gutter-current';
+      } else if (cl) {
+        if (n === cl) cls += ' gutter-current';
+        else if (cnt > 0) cls += ' gutter-pass';
+      } else if (solved) {
+        if (cnt > 0) cls += ' gutter-pass';
       }
-      html.push('<span class="' + cls + '">' + n + '</span>');
+      const countTag = cnt > 1 ? '<span class="gutter-count">' + cnt + '</span>' : '';
+      html.push('<span class="' + cls + '">' + n + countTag + '</span>');
     }
     el.gutter.innerHTML = html.join('');
     el.gutter.scrollTop = el.code.scrollTop;
+    syncOverlay();
+  }
+
+  // WHY: a thin bar over the editor paints the failing line's background, so the failure is visible in
+  //      the source itself, not only in the gutter. It is pointer-events:none and mirrors the textarea's
+  //      scroll, so it never interferes with typing.
+  function syncOverlay() {
+    if (!el.overlay) return;
+    const count = el.code.value.split('\n').length;
+    const fl = (failedLine >= 1 && failedLine <= count) ? failedLine : 0;
+    const lines = [];
+    for (let n = 1; n <= count; n += 1) {
+      if (fl && n === fl) lines.push('<div class="overlay-fail"></div>');
+      else lines.push('<div></div>');
+    }
+    el.overlay.innerHTML = lines.join('');
+    el.overlay.scrollTop = el.code.scrollTop;
+    el.overlay.scrollLeft = el.code.scrollLeft;
   }
 
   // WHY: editing the source makes the last run a lie, so the board returns to its untouched state
@@ -1141,6 +1179,10 @@
   });
   el.code.addEventListener('scroll', () => {
     el.gutter.scrollTop = el.code.scrollTop;
+    if (el.overlay) {
+      el.overlay.scrollTop = el.code.scrollTop;
+      el.overlay.scrollLeft = el.code.scrollLeft;
+    }
     if (snapGuard) { snapGuard = false; return; }
     if (sug.items.length) hideSuggest();
   });
