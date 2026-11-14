@@ -1248,6 +1248,20 @@ check('app: the board is refitted to the room typing leaves, and a run hands the
   assert(/closeKeyboard\(\)/.test(run.slice(0, 300)), 'Run leaves the keyboard over the board');
   return 'board follows the room, Run clears the keyboard';
 });
+check('app: a run that stops marks the failing line and dims the rest', () => {
+  const app = read(path.join(v1, 'js', 'app.js'));
+  const css = read(path.join(v1, 'css', 'app.css'));
+  assert(/let failedLine = 0;/.test(app), 'the controller keeps no mark for a failed line');
+  assert(/failedLine = last\.line;/.test(app), 'finish() does not record the line a run stopped on');
+  assert(/failedLine = 0;/.test(app), 'a solved, edited or reset run does not clear the mark');
+  const sync = app.slice(app.indexOf('function syncGutter()'));
+  assert(/gutter-fail/.test(sync), 'syncGutter does not paint the failing line');
+  assert(/gutter-skip/.test(sync), 'syncGutter does not dim the lines that never ran');
+  assert(/\.gutter-fail\s*{[^}]*color:\s*var\(--danger\)/.test(css), 'the failing line is not painted in the danger colour');
+  assert(/\.gutter-skip\s*{[^}]*opacity:\s*0\.35/.test(css), 'the skipped lines are not dimmed');
+  return 'failing line in danger, tail dimmed, cleared on edit, solve, reset and restart';
+});
+
 
 check('app: a short visible window spends the status line on the board', () => {
   const css = read(path.join(v1, 'css', 'app.css'));
