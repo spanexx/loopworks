@@ -64,6 +64,7 @@
     program: id('program'),
     editor: id('editor'),
     gutter: id('gutter'),
+    runBar: id('run-bar'),
     code: id('code'),
     suggest: id('suggest'),
     lineCount: id('line-count'),
@@ -81,6 +82,7 @@
     aimWords: id('aim-words'),
     studioBody: id('studio-body')
   };
+  const runMarker = LoopworksRunMarker.create(el.gutter, el.code, el.runBar);
   const tabs = Array.prototype.slice.call(doc.querySelectorAll('.tab'));
 
   const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6"/></svg>';
@@ -106,13 +108,6 @@
   let level = null;
   let baseline = null;
   let machine = null;
-  let failedLine = 0;
-  let currentLine = 0;
-  let executionCounts = {};
-  let runSolved = false;
-  let failureReason = '';
-  let guardResults = {};
-  let controlLines = {};
   let timer = null;
   let running = false;
   let logOpen = false;
@@ -147,13 +142,7 @@
     pack = nextPack;
     level = nextLevel;
     machine = null;
-    failedLine = 0;
-    currentLine = 0;
-    executionCounts = {};
-    runSolved = false;
-    failureReason = '';
-    guardResults = {};
-    controlLines = {};
+    runMarker.reset();
     baseline = Loopworks.machine(pack, level.id, '').world();
     logOpen = false;
     el.logList.hidden = true;
@@ -162,7 +151,7 @@
     sug.dismissed = false;
     hideSuggest();
     el.code.value = '';
-    syncGutter();
+    runMarker.sync();
     el.wherePack.textContent = pack.name;
     el.whereLevel.textContent = level.title;
     // WHY: a hole level's aim is a sequence, so the goal bar carries a slot for each label. The
@@ -180,7 +169,7 @@
     updateClaw(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
     updateCount();
-    syncGutter();
+    runMarker.sync();
     fitBoard();
   }
 
@@ -438,7 +427,7 @@
     updateClaw(snapshot);
     const event = machine.events[machine.events.length - 1];
     if (event) updateLog(event);
-    if (event) { executionCounts[event.line] = (executionCounts[event.line] || 0) + 1; currentLine = event.line; syncGutter(); }
+    if (event) { runMarker.incrementCount(event.line); runMarker.setCurrent(event.line); runMarker.setGuardResult(event.line, event.answer); runMarker.sync(); }
     if (status.done) finish(status);
     else if (event) cue(tickCue(event));
   }
@@ -455,10 +444,7 @@
       progress = LoopworksEvidence.writeEntry(level.id, entry);
       const over = status.linesUsed > level.budget ? ', over budget' : '';
       setVerdict('solved', 'Solved', `${status.linesUsed} of ${level.budget} lines${over}`, CHECK);
-      failedLine = 0;
-      currentLine = 0;
-      runSolved = true;
-      syncGutter();
+      runMarker.setSolved();
       // WHY: a solve is the moment the word is revisited, but the studio is offered only when it still
       //      has a context to do. That keeps a finished studio from interrupting practice, and it also
       //      reaches a save that solved the board before auto-open existed.
@@ -469,11 +455,9 @@
       const last = machine.events[machine.events.length - 1];
       let detail = status.reason;
       if (status.reason === 'program ended') detail = 'program ended - the goal is not met';
-      else if (last) { detail = `${status.reason} at line ${last.line}`; failedLine = last.line; }
-      currentLine = 0;
-      runSolved = false;
+      else if (last) { detail = `${status.reason} at line ${last.line}`; runMarker.setFailed(last.line, status.reason); }
       setVerdict('stuck', 'Stuck', detail, WARN);
-      syncGutter();
+      runMarker.sync();
     }
     if (logOpen) renderTrace();
     cue(endingCue(status));
@@ -511,10 +495,7 @@
     if (running) { pause(); return; }
     closeKeyboard();
     cancelStudioOffer();
-    failedLine = 0;
-    currentLine = 0;
-    executionCounts = {};
-    runSolved = false;
+    runMarker.reset();
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -537,7 +518,7 @@
   function stepOnce() {
     pause();
     cancelStudioOffer();
-    failedLine = 0;
+    runMarker.reset();
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -558,10 +539,7 @@
     pause();
     cancelStudioOffer();
     machine = null;
-    failedLine = 0;
-    currentLine = 0;
-    executionCounts = {};
-    runSolved = false;
+    runMarker.reset();
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
     resetLog();
@@ -577,93 +555,13 @@
     el.lineCount.textContent = count === 1 ? '1 line' : `${count} lines`;
   }
 
-  // WHY: the gutter is the only place a run can leave a mark on the source. While a run is live, the
-  //      line being executed is marked so the learner sees where the machine is. When a run stops on a
-  //      line, that line is painted in the danger colour and every line after it is dimmed, so the
-  //      learner sees where the code stopped and which lines never ran; the reason (bump, out of fuel,
-  //      too many steps, program ended) sits in a small badge on that line. On a solved run every line
-  //      that ran is marked green with a checkmark. Control-flow lines (repeat, end) are marked with a
-  //      loop icon. Guard lines show whether their condition was true or false. A line that ran more
-  //      than once carries its count. A line that never ran is dimmed. A clean gutter means the last
-  //      run either never started or was edited away.
-  // WHY: a short symbol is faster to read than a word in a gutter that is only a few pixels wide.
-  //      The full reason stays in the tooltip and in the verdict, so nothing is lost.
-  function reasonIcon(reason) {
-    if (reason === 'bump') return '\u2715';
-    if (reason === 'out of fuel') return '\u26A1';
-    if (reason === 'too many steps') return '\u221E';
-    if (reason === 'program ended') return '\u25A0';
-    return '\u2715';
-  }
-
-  function syncGutter() {
-    // detect control-flow lines from the source so they are always marked
-    controlLines = {};
-    el.code.value.split('\n').forEach((text, i) => {
-      const t = text.trim();
-      if (/^repeat\s+\d+$/.test(t) || t === 'end') controlLines[i + 1] = t === 'end' ? 'end' : 'repeat';
-    });
-    const count = el.code.value.split('\n').length;
-    const fl = (failedLine >= 1 && failedLine <= count) ? failedLine : 0;
-    const cl = (!fl && currentLine >= 1 && currentLine <= count) ? currentLine : 0;
-    const solved = (!fl && !cl && runSolved);
-    const hasRun = (Object.keys(executionCounts).length > 0);
-    if (!fl && !cl && !solved && !hasRun) {
-      const numbers = [];
-      for (let n = 1; n <= count; n += 1) numbers.push(String(n));
-      el.gutter.textContent = numbers.join('\n');
-      el.gutter.scrollTop = el.code.scrollTop;
-      return;
-    }
-    const html = [];
-    for (let n = 1; n <= count; n += 1) {
-      let cls = 'gutter-num';
-      const cnt = executionCounts[n] || 0;
-      let mark = '';
-      const isControl = !!controlLines[n];
-      if (fl) {
-        if (n === fl) { cls += ' gutter-fail'; mark = '<span class="gutter-reason" title="' + (failureReason || 'stopped') + '">' + reasonIcon(failureReason) + '</span>'; }
-        else if (n < fl && cnt > 0) cls += ' gutter-pass';
-        else if (n > fl) cls += ' gutter-skip';
-        else if (isControl) cls += ' gutter-control';
-      } else if (cl) {
-        if (n === cl) cls += ' gutter-current';
-        else if (cnt > 0) cls += ' gutter-pass';
-        else if (isControl) cls += ' gutter-control';
-        else if (hasRun) cls += ' gutter-skip';
-      } else if (solved) {
-        if (cnt > 0) { cls += ' gutter-pass'; mark = '<span class="gutter-check">\u2713</span>'; }
-        else if (isControl) cls += ' gutter-control';
-        else cls += ' gutter-skip';
-      } else if (hasRun) {
-        if (cnt > 0) cls += ' gutter-pass';
-        else if (isControl) cls += ' gutter-control';
-        else cls += ' gutter-skip';
-      }
-      const gr = guardResults[n];
-      if (gr && (gr.yes + gr.no) > 0) {
-        const total = gr.yes + gr.no;
-        const ratio = total > 1 ? gr.yes + '/' + total : (gr.yes > 0 ? '\u2713' : '\u2717');
-        mark = '<span class="gutter-guard" title="true: ' + gr.yes + ', false: ' + gr.no + '">' + ratio + '</span>' + mark;
-      }
-      if (isControl) {
-        const icon = controlLines[n] === 'repeat' ? '\u21bb' : '\u230b';
-        mark = '<span class="gutter-control-mark">' + icon + '</span>' + mark;
-      }
-      const countTag = cnt > 1 ? '<span class="gutter-count">' + cnt + '</span>' : '';
-      html.push('<span class="' + cls + '" title="' + (n === fl ? (failureReason || '') : (solved && cnt > 0 ? 'passed' : (hasRun && cnt === 0 ? 'skipped' : ''))) + '">' + n + countTag + mark + '</span>');
-    }
-    el.gutter.innerHTML = html.join('');
-    el.gutter.scrollTop = el.code.scrollTop;
-  }
-
   // WHY: editing the source makes the last run a lie, so the board returns to its untouched state
   //      and the trace clears. The program itself is never saved or thrown away.
   function programChanged() {
     pause();
     cancelStudioOffer();
     machine = null;
-    failedLine = 0;
+    runMarker.reset();
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
     resetLog();
@@ -671,7 +569,7 @@
     updateClaw(baseline);
     setVerdict('idle', '', 'Write a program, then run it.', DOT);
     updateCount();
-    syncGutter();
+    runMarker.sync();
   }
 
   // ---------------------------------------------------------------- typing help
@@ -1209,6 +1107,7 @@
   });
   el.code.addEventListener('scroll', () => {
     el.gutter.scrollTop = el.code.scrollTop;
+    runMarker.reposition();
     if (snapGuard) { snapGuard = false; return; }
     if (sug.items.length) hideSuggest();
   });
@@ -1338,6 +1237,4 @@
     showView(next ? 'work' : 'evidence');
     if (next && host.matchMedia && host.matchMedia('(min-width: 901px)').matches) el.code.focus();
   }
-  host.__startRun = startRun;
-  host.__programChanged = programChanged;
 })();
