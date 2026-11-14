@@ -444,7 +444,7 @@
       //      reaches a save that solved the board before auto-open existed.
       const met = level.word ? LoopworksStudio.met(shelf, progress, wordsRecord) : [];
       const metWord = met.find((item) => item.packId === pack.id && item.word === level.word);
-      if (metWord && LoopworksStudio.nextContext(metWord.done)) offerStudio();
+      if (metWord && LoopworksStudio.nextContext(metWord.done, metWord.data)) offerStudio();
     } else {
       const last = machine.events[machine.events.length - 1];
       let detail = status.reason;

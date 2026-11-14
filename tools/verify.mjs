@@ -1633,7 +1633,7 @@ check('app: the word record keeps a completed context and ignores a corrupt one'
   runScript(host, path.join(v1, 'js', 'studio.js'));
   const S = host.LoopworksStudio;
   assert(S, 'studio.js did not define the LoopworksStudio global');
-  assert(JSON.stringify(S.CONTEXTS) === JSON.stringify(['story', 'spelling', 'dialogue', 'matching']),
+  assert(JSON.stringify(S.CONTEXTS) === JSON.stringify(['story', 'spelling', 'forms', 'dialogue', 'matching']),
     'the context order is not the locked one');
   let record = S.read();
   assert(record.words && Object.keys(record.words).length === 0, 'a fresh record is not empty');
@@ -1651,8 +1651,19 @@ check('app: the word record keeps a completed context and ignores a corrupt one'
   assert(!S.isDone(record, 'polish', 'biuro', 'story'), 'a non-boolean mark was kept');
   assert(!S.isDone(record, 'polish', 'biuro', 'chatter'), 'an unknown context was kept');
   assert(S.isDone(record, 'polish', 'biuro', 'spelling'), 'a true mark was dropped');
-  assert(S.nextContext({ story: true }) === 'spelling', 'nextContext did not skip a done context');
-  return 'mark round-trip, corrupt ignored, order locked';
+  assert(S.nextContext({ story: true }, {}) === 'spelling', 'nextContext did not skip a done context');
+  const changing = { forms: [{ label: 'kind', to: 'changed', en: 'meaning', why: 'why', use: { pl: 'a ____', en: 'a line', answer: 'changed' } }] };
+  assert(S.nextContext({ story: true, spelling: true }, changing) === 'forms',
+    'a word with a Form does not walk through it');
+  assert(S.nextContext({ story: true, spelling: true }, {}) === 'dialogue',
+    'a word with no Form does not skip the Forms context');
+  assert(S.nextContext({ story: true, spelling: true, forms: true }, {}) === 'dialogue',
+    'an old Forms mark blocks a word that carries no Form');
+  assert(JSON.stringify(S.contexts(changing)) === JSON.stringify(['story', 'spelling', 'forms', 'dialogue', 'matching']),
+    'the walk for a changing word is not five contexts');
+  assert(JSON.stringify(S.contexts({ forms: [] })) === JSON.stringify(['story', 'spelling', 'dialogue', 'matching']),
+    'an empty forms list did not keep the four-context walk');
+  return 'mark round-trip, corrupt ignored, order locked, Forms only when carried';
 });
 
 check('app: a met word comes from a solved level and its pack word', () => {
@@ -1690,7 +1701,7 @@ check('app: a met word comes from a solved level and its pack word', () => {
   return 'met from progress, deduped, missing data skipped, aim from pack';
 });
 
-check('app: the studio walks four contexts in order and refuses Next until one is done', () => {
+check('app: the studio walks four contexts when the word carries no Form', () => {
   const host = fakeStudioHost();
   vm.createContext(host);
   runScript(host, path.join(v1, 'js', 'studio.js'));
@@ -1758,9 +1769,80 @@ check('app: the studio walks four contexts in order and refuses Next until one i
   assert(done, 'the finished studio offers no Done');
   done.fire('click');
   assert(exits.length === 1, 'Done did not end the studio');
-  assert(collectText(mount).join(' ').includes('All four contexts are met'),
+  assert(collectText(mount).join(' ').includes('All 4 contexts are met'),
     'the finished studio does not say the four contexts are met');
+  assert(!collectText(mount).join(' ').includes('Forms'),
+    'a word with no Form still shows a Forms context');
   return 'story, spelling, dialogue, matching; blank as input; Next gated; Done ends it; no tabs';
+});
+
+check('app: the studio teaches a Form between Spelling and Dialogue', () => {
+  const host = fakeStudioHost();
+  vm.createContext(host);
+  runScript(host, path.join(v1, 'js', 'studio.js'));
+  runScript(host, path.join(v1, 'js', 'studio-view.js'));
+  const view = host.LoopworksStudioView;
+  const data = {
+    en: 'office', pl: 'biuro',
+    story: [{ pl: 'Pracuję ____ biurze.', en: 'I work in an office.', answer: 'w' }],
+    forms: [{
+      label: 'locative',
+      to: 'biurze',
+      en: 'in the office',
+      why: 'After "w" (in), the ending -o becomes -e, and the r softens to rz.',
+      use: { pl: 'Rozmawiamy o ____ przez telefon.', en: 'We are talking about the office on the phone.', answer: 'biurze' }
+    }],
+    match: [{ pl: 'biuro', en: 'office' }, { pl: 'biurze', en: 'in the office' }],
+    dialog: {
+      q: 'Gdzie pracujesz?', qGloss: 'Where do you work?',
+      opts: ['W biurze.', 'W szkole.'], right: 0, reply: 'Dobrze.'
+    }
+  };
+  const met = [{ packId: 'polish', packName: 'The Workplace', word: 'biuro', data, done: { story: true, spelling: true } }];
+  const marks = [];
+  const exits = [];
+  const mount = fakeStudioNode('div');
+  view.render(mount, met, (...args) => marks.push(args), () => exits.push('done'));
+
+  const step = () => collectByClass(mount, 'studio-step')[0].textContent;
+  assert(step() === 'Forms - 3 of 5', `the Form is not the third of five contexts: "${step()}"`);
+  const pair = collectByClass(mount, 'studio-form-pair');
+  assert(pair.length === 1, 'the Form did not draw its pair');
+  const pairText = collectText(pair[0]);
+  assert(pairText.includes('biuro') && pairText.includes('biurze'),
+    `the pair does not show the base and the changed form: ${JSON.stringify(pairText)}`);
+  const chips = collectByClass(mount, 'studio-chip').map((chip) => chip.textContent);
+  assert(chips.includes('locative') && chips.includes('in the office'),
+    `the Form does not name the change and its meaning: ${JSON.stringify(chips)}`);
+  const why = collectByClass(mount, 'studio-form-why')[0];
+  assert(why && why.textContent.includes('softens'), 'the reason the language changes the word is not shown');
+  assert(collectByTag(mount, 'input').length === 1, 'the Form drew more than one input');
+
+  answerBlank(mount, 'biuroo');
+  assert(marks.length === 0, 'a wrong changed form marked the context');
+  assert(collectByTag(mount, 'input')[0].className.includes('is-wrong'), 'a wrong changed form is not marked on the blank');
+
+  answerBlank(mount, 'biurze');
+  assert(marks.length === 1 && marks[0][2] === 'forms', 'the right changed form did not mark the Forms context');
+  const doneLine = collectByClass(mount, 'studio-done')[0];
+  assert(doneLine && doneLine.textContent === 'Form completed - biurze.', 'the Form does not end on the changed word');
+  const next = findButton(mount, 'Next');
+  assert(next && next.disabled === false, 'Next is refused after the Form is done');
+  next.fire('click');
+  assert(step() === 'Dialogue - 4 of 5', `Dialogue does not follow the Form: "${step()}"`);
+
+  findButton(mount, 'W biurze.').fire('click');
+  findButton(mount, 'Next').fire('click');
+  assert(step() === 'Matching - 5 of 5', `Matching is not the last context: "${step()}"`);
+  findButton(mount, 'biurze').fire('click');
+  findButton(mount, 'in the office').fire('click');
+  findButton(mount, 'biuro').fire('click');
+  findButton(mount, 'office').fire('click');
+  assert(marks.length === 3 && marks[2][2] === 'matching', 'the five-context walk did not finish on matching');
+  assert(collectText(mount).join(' ').includes('All 5 contexts are met'), 'the walk does not say all five contexts are met');
+  findButton(mount, 'Done').fire('click');
+  assert(exits.length === 1, 'Done did not end the five-context studio');
+  return 'Forms third of five, pair and reason first, changed form marks it, five contexts end in Done';
 });
 
 check('app: the studio names no subject of its own', () => {
@@ -1808,8 +1890,8 @@ check('app: the studio opens after a solve with work left, and Done returns to W
   const ask = app.indexOf('const met = level.word ? LoopworksStudio.met(shelf, progress, wordsRecord) : []');
   assert(write >= 0, 'the controller no longer writes the solved entry');
   assert(ask > write, 'the solved word is not read back before the offer');
-  assert(/nextContext\(metWord\.done\)/.test(app), 'the offer does not wait for studio work to remain');
-  assert(/if \(metWord && LoopworksStudio\.nextContext\(metWord\.done\)\) offerStudio\(\);/.test(app),
+  assert(/nextContext\(metWord\.done, metWord\.data\)/.test(app), 'the offer does not wait for studio work to remain');
+  assert(/if \(metWord && LoopworksStudio\.nextContext\(metWord\.done, metWord\.data\)\) offerStudio\(\);/.test(app),
     'a solve with studio work left does not offer the studio');
   assert(/host\.setTimeout\(/.test(app) && /host\.clearTimeout\(/.test(app), 'the offer cannot be cancelled');
   assert(/if \(view !== 'work' \|\| running\) return;/.test(app), 'the offer can steal a screen the learner chose');
@@ -1826,10 +1908,16 @@ check('app: the aim band and the studio view are on the page', () => {
     assert(new RegExp(`id="${name}"`).test(page), `the page has no #${name}`);
   });
   assert(/data-view="studio"/.test(page), 'the page has no Studio tab');
+  // WHY: the page's own intro must describe the walk a Word actually has. It promised four contexts
+  //      for every Word after Forms made five, which the headless drive caught on 2026-11-14.
+  const intro = page.match(/<div class="studio-head">[\s\S]*?<p>([\s\S]*?)<\/p>/);
+  assert(intro, 'the studio page no longer carries its intro paragraph');
+  assert(/forms/.test(intro[1]), 'the studio intro does not mention the forms a word may take');
+  assert(!/in four contexts/.test(intro[1]), 'the studio intro still promises four contexts for every word');
   const app = read(path.join(v1, 'js', 'app.js'));
   assert(/LoopworksStudio\.aim/.test(app), 'the Evidence view never asks for the aim');
   assert(/LoopworksStudio\.met/.test(app), 'the studio view never asks for met words');
-  return 'studio tab, aim band, claw fact';
+  return 'studio tab, aim band, claw fact, intro that matches the walk';
 });
 
 // WHY: reading only the theme block keeps a stray root variable from hiding a missing ramp value.
@@ -2052,6 +2140,47 @@ check('app: an added pack is stored as data the engine can still check', () => {
   const result = reload.U.load(reload.host);
   assert(result.ok && result.loaded.length === 1, `a pack read back from storage refused: ${result.errors.join('; ')}`);
   return `${raw.length} characters round-trip`;
+});
+
+// WHY: the word lesson is checked before it can reach a learner. The base fixture is the shipped Word
+//      pack with new ids, so each fault below is one break in an otherwise valid lesson - the same shape
+//      a chat model is asked for. The engine still checks the boards; this check is about the words.
+function wordLesson() {
+  const pack = JSON.parse(JSON.stringify(findPack('polish')));
+  pack.id = 'lesson';
+  pack.levels.forEach((level, index) => { level.id = `lesson-${index + 1}`; });
+  return pack;
+}
+
+check('app: a broken word lesson is refused by name', () => {
+  const g = addOnHost();
+  const plain = g.U.validate([wordLesson()], g.shelfIds());
+  assert(plain.ok, `a good word lesson was refused: ${plain.errors.join('; ')}`);
+  const faults = [
+    ['no language', (pack) => { delete pack.language; }, 'no language'],
+    ['no story', (pack) => { delete pack.words.biuro.story; }, 'has no story'],
+    ['a story line with no blank', (pack) => { pack.words.biuro.story[0].pl = 'No blank here.'; }, 'story 1 needs exactly one ____ blank'],
+    ['a Form with no reason', (pack) => { pack.words.biuro.forms[0].why = ''; }, 'form 1 has no why'],
+    ['no forms list', (pack) => { delete pack.words.biuro.forms; }, 'has no forms list'],
+    ['a matching pair with no meaning', (pack) => { pack.words.biuro.match[0] = { pl: 'biuro' }; }, 'match 1 needs a word and its English meaning'],
+    ['a dialogue pointing nowhere', (pack) => { pack.words.biuro.dialog.right = 9; }, 'points at an option that is not there'],
+    ['a level word the pack does not carry', (pack) => { pack.levels.find((level) => level.word).word = 'missing'; }, 'names the word "missing"'],
+    ['a goal that does not spell the word', (pack) => { pack.levels.find((level) => level.word).goal.sequence[0] = 'z'; }, 'goal sequence spells'],
+    ['a hole with no crate for a letter', (pack) => {
+      const level = pack.levels.find((entry) => entry.word);
+      level.crates = level.crates.filter((crate) => crate[2] !== 'u');
+    }, 'no crate carries "u"']
+  ];
+  faults.forEach(([label, breakIt, needle]) => {
+    const pack = wordLesson();
+    breakIt(pack);
+    const verdict = g.U.validate([pack], g.shelfIds());
+    assert(!verdict.ok, `${label}: the broken lesson was accepted`);
+    assert(verdict.errors.some((message) => message.includes(needle)),
+      `${label}: no message says "${needle}" - ${verdict.errors.join(' | ')}`);
+  });
+  assert(g.U.validate([addedPack()], g.shelfIds()).ok, 'a logic pack is now refused because it carries no words');
+  return `${faults.length} faults named, the good lesson and a logic pack still pass`;
 });
 
 // WHY: one board family, three verdicts. It takes two lines to win - a turn and a walk - so the same
@@ -2307,6 +2436,57 @@ check('app: the prompt carries the shape of a real level, not a described one', 
   return `${pack.id}/${pack.levels[0].id} as the shape, ${Object.keys(pack.levels[0]).length} fields named`;
 });
 
+check('app: the word prompt asks for a word lesson around the learner\'s word', () => {
+  const g = promptHost();
+  const line = 'a word - a language - what it means';
+  const text = g.L.text(g.box, null, line);
+  assert(text.includes(`The learner is learning: ${line}.`), 'the word prompt does not carry the learner\'s own line');
+  assert(g.L.WORD_LEVEL_MAX <= g.U.MAX_LEVELS,
+    `the word prompt asks for ${g.L.WORD_LEVEL_MAX} levels and the importer refuses above ${g.U.MAX_LEVELS}`);
+  assert(text.includes(`${g.L.WORD_LEVEL_MIN} to ${g.L.WORD_LEVEL_MAX}`),
+    'the word prompt does not ask for the two-board minimum and the four-level ceiling');
+  ['language:', 'aim:', 'words:', 'story', 'match', 'dialog', 'forms',
+    'label, to, en, why and use', 'fresh sentence', 'precise meaning',
+    '"kind": "hole"', '"sequence"', '[x, y, "letter"]', 'decoy', 'Word studio'].forEach((piece) => {
+    assert(text.includes(piece), `the word prompt never names "${piece}"`);
+  });
+  assert(/goal sequence spells that word exactly/.test(text), 'the word prompt does not tie the goal to the word');
+  const fieldsLine = text.split('Every level is an object with these fields:\n')[1].split('\n')[0];
+  assert(fieldsLine.includes('word') && fieldsLine.includes('holes'),
+    `the level fields leave out a word-bearing level's keys: ${fieldsLine}`);
+  return `${text.length} characters, every word-lesson field named, ${g.L.WORD_LEVEL_MIN}-${g.L.WORD_LEVEL_MAX} levels`;
+});
+
+check('app: the word prompt carries a real word pack, not a described one', () => {
+  const g = promptHost();
+  const shown = g.L.exampleJson(g.box, 'a word - a language - what it means');
+  const pack = JSON.parse(shown);
+  assert(pack.words && Object.keys(pack.words).length > 0, `the word example carries no words: ${shown.slice(0, 80)}`);
+  assert(Array.isArray(pack.levels) && pack.levels.length === 1, 'the word example is not one level');
+  const carried = pack.levels[0];
+  assert(typeof carried.word === 'string' && carried.word, 'the word example level names no word');
+  assert(pack.words[carried.word], `the word example level names "${carried.word}" but the pack does not carry it`);
+  const errors = g.box.Loopworks.validatePack(JSON.parse(JSON.stringify(pack)));
+  assert(errors.length === 0, `the word example is refused by the engine: ${JSON.stringify(errors)}`);
+  const text = g.L.text(g.box, null, 'a word - a language - what it means');
+  assert(text.includes(shown), 'the assembled word prompt does not contain the word example it claims to carry');
+  const exampleFields = Object.keys(carried).join(', ');
+  const exampleFieldsLine = text.split('Every level is an object with these fields:\n')[1].split('\n')[0];
+  assert(exampleFieldsLine === exampleFields, 'the level fields line does not match the example level');
+  return `${pack.id}/${carried.id} carries ${carried.word}, engine-valid, ${Object.keys(pack.words).length} word in the block`;
+});
+
+check('app: the prompt stays the logic prompt when no word is named', () => {
+  const g = promptHost();
+  const logic = g.L.text(g.box);
+  assert(g.L.text(g.box, null, '') === logic, 'an empty word field changed the logic prompt');
+  assert(g.L.text(g.box, null, '   ') === logic, 'a whitespace word field changed the logic prompt');
+  assert(logic.includes('teaches programming logic'), 'the empty field no longer asks for a logic pack');
+  assert(!logic.includes('"forms"') && !logic.includes('forms is an array'),
+    'the logic prompt carries a word-lesson block');
+  return `${logic.length} characters, no word block`;
+});
+
 check('app: the copied prompt carries no learner record and no pack the player added', () => {
   const stored = JSON.stringify([{
     id: 'courtyard', name: 'The Courtyard', subject: 'programming logic',
@@ -2329,6 +2509,7 @@ check('app: the prompt module is assembled from the shelf, so its file names no 
   const names = new Set();
   shelf().forEach((pack) => {
     [pack.id, pack.name].forEach((value) => { if (value) names.add(String(value).toLowerCase()); });
+    Object.keys(pack.words || {}).forEach((word) => { if (word) names.add(String(word).toLowerCase()); });
   });
   const named = [...names].filter((word) => text.includes(word));
   assert(named.length === 0, `js/level-prompt.js names ${named.join(', ')}`);
@@ -2405,6 +2586,25 @@ check('app: a clipboard that takes it says copied and leaves the paste box alone
     `a successful copy is not in the green tone: "${g.made['pack-add-error'].className}"`);
   assert(/copied/.test(g.made['pack-add-error'].textContent), 'the line does not say copied when the clipboard took it');
   return 'clipboard first, one write, green line, box untouched';
+});
+
+check('app: a word in the Add-a-level field reaches the copied prompt', async () => {
+  const g = dialogHost();
+  const line = 'a word - a language - what it means';
+  g.made['pack-word'].value = line;
+  const written = [];
+  g.box.navigator.clipboard = { writeText: (value) => { written.push(value); return Promise.resolve(); } };
+  await g.made['pack-prompt-copy'].handlers.click();
+  assert(written.length === 1, `the clipboard was asked to write ${written.length} times`);
+  assert(written[0] === g.box.LoopworksLevelPrompt.text(g.box, null, line),
+    'the copied text is not the word prompt the module builds');
+  assert(written[0].includes(`The learner is learning: ${line}.`), 'the copied word prompt lost the learner\'s line');
+  g.made['pack-word'].value = '';
+  await g.made['pack-prompt-copy'].handlers.click();
+  assert(written.length === 2, 'the second copy did not happen');
+  assert(written[1] === g.box.LoopworksLevelPrompt.text(g.box), 'emptying the field did not return the logic prompt');
+  assert(!written[1].includes('The learner is learning:'), 'the emptied field still copied a word lesson');
+  return 'filled field copies the word lesson, empty field copies the logic prompt';
 });
 
 check('app: a picked .json file lands in the box as the player wrote it', async () => {

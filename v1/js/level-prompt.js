@@ -4,9 +4,12 @@
 //      copy typed out by hand, because a hand-typed copy is the thing this project keeps removing. It
 //      reads the shelf through the host it is handed and returns a string; it never touches the document,
 //      the clipboard or storage, so the node harness and the page get the same text from the same code.
+//      A learner who names a word gets the word-lesson ask; a learner who names none gets the logic ask.
 // PACK: loopworks-level-prompt
 // 2026-11-05 qoder-agent: built to PRD-TRD-loopworks-level-prompt.md sections 2, 3 and 9, and the
 //      decisions locked in GRILL-loopworks-level-prompt.txt entries 3, 5, 6, 7, 8 and 10.
+// 2026-11-14 agent: the word-lesson ask and its real word-pack example, following
+//      GRILL-loopworks-word-lessons entries 9 and 10 and PRD-TRD-loopworks-word-lessons sections 3 and 7.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -16,10 +19,29 @@
   //      stays under the importer's own, so a prompt-following model never writes a pack this app refuses.
   const LEVEL_MIN = 3;
   const LEVEL_MAX = 5;
+  // WHY: a word lesson needs at least the two boards the studio's word levels use - one that spells the
+  //      word and one that asks its meaning - and no more than four, which is still under the importer's
+  //      ceiling. The numbers are the lesson's shape, not a difficulty rating.
+  const WORD_LEVEL_MIN = 2;
+  const WORD_LEVEL_MAX = 4;
 
   function shelfFirst(h) {
     const entries = h.Loopworks.packs().filter((entry) => entry.errors.length === 0);
     return entries.length ? entries[0].pack : null;
+  }
+
+  // WHY: the word example is a real pack that already carries a Word and a level that names it. It is
+  //      found on the shelf, never typed here, so the example cannot drift from the data the studio reads
+  //      and this module cannot name a language or a word of its own.
+  function wordPack(h) {
+    const entries = h.Loopworks.packs().filter((entry) => entry.errors.length === 0);
+    const found = entries.find((entry) => {
+      const pack = entry.pack;
+      if (!pack || !pack.words || typeof pack.words !== 'object') return false;
+      if (Object.keys(pack.words).length === 0) return false;
+      return (pack.levels || []).some((level) => level && typeof level.word === 'string' && level.word);
+    });
+    return found ? found.pack : null;
   }
 
   // WHY: a word with no description ships a bare rule into the prompt, so the pair is checked here the
@@ -82,17 +104,93 @@
   // WHY: a real level from the shelf, not a described one. The player is shown the shape he must match by
   //      holding up the first thing this app already plays, trimmed to a single level so the ask stays
   //      short. It is serialised from live data, so a field added to every level appears here for free.
-  function exampleJson(h) {
-    const pack = shelfFirst(h);
+  //      Asked for a word lesson, it holds up a real Word pack and the first level that carries a word.
+  function exampleJson(h, wanted) {
+    const learning = typeof wanted === 'string' ? wanted.trim() : '';
+    const pack = learning ? wordPack(h) : shelfFirst(h);
     if (!pack) return '';
     const one = JSON.parse(JSON.stringify(pack));
-    one.levels = [one.levels[0]];
+    const carried = (pack.levels || []).find((level) => level && typeof level.word === 'string' && level.word);
+    one.levels = [learning && carried ? carried : one.levels[0]];
     return JSON.stringify(one, null, 2);
   }
 
-  function text(h, pack) {
-    const target = pack || shelfFirst(h);
+  // WHY: the word ask is one contract with the studio: the fields it names are the fields the model
+  //      paints, and the importer refuses anything this block promises and the pack does not carry. The
+  //      only thing that varies is the learner's own line; every rule around it is the app's voice.
+  function wordText(h, target, learning) {
+    const blocks = [];
+
+    blocks.push([
+      'Write a pack of levels and a word lesson for Loopworks, a game that teaches programming logic and the words of a language.',
+      'The player types short instruction lines and a drone runs them on a grid.',
+      `The learner is learning: ${learning}.`,
+      `Return one JSON pack holding ${WORD_LEVEL_MIN} to ${WORD_LEVEL_MAX} levels, and nothing else - no prose around it.`
+    ].join('\n'));
+
+    blocks.push(['The only words the player may use:', ...words(h, target)].join('\n'));
+
+    const rules = grammar(h, target);
+    if (rules.length) {
+      blocks.push(['The board and goal rules, in the words the game enforces:', ...rules].join('\n'));
+    }
+
+    const caps = limits(h);
+    if (caps.length) blocks.push(['Keep within these limits:', ...caps].join('\n'));
+
+    blocks.push([
+      'The pack carries the lesson as data, not only as boards:',
+      'language: the language the word belongs to, named the way the learner named it.',
+      'aim: one short phrase naming what the learner is here for.',
+      'words: an object with one entry per word. The key is the word in its base form.',
+      'Every word carries en, pl, story, match, dialog and forms.',
+      'en is the English meaning of the base form. pl is the base form itself, and equals the key.',
+      'story is 3 sentences, each with exactly one ____ blank and its answer, and the changed form appears in at least one of them.',
+      'match is 6 to 8 pairs taken from the story, the learning-language word first and its English meaning second.',
+      'Give the base form and every changed form its own precise meaning, so two forms never both read as the same English word.',
+      'dialog is one question, its English gloss, 2 to 4 options, the index of the right option as "right", and a reply.',
+      'forms is an array of every way the word changes. A word that does not change carries an empty array.',
+      'Each form carries label, to, en, why and use.',
+      'label is the pack\'s own name for the change. to is the changed word. en is what the changed form means.',
+      'why is one plain sentence saying why the language changes the word.',
+      'use is a fresh sentence the learner has not read, with exactly one ____ blank and its answer; the answer is the changed form.'
+    ].join('\n'));
+
+    const carried = (target.levels || []).find((item) => item && typeof item.word === 'string' && item.word)
+      || ((wordPack(h) && wordPack(h).levels || []).find((item) => item && typeof item.word === 'string' && item.word))
+      || (target.levels || [])[0];
+    const fields = carried ? Object.keys(carried).join(', ') : '';
+    blocks.push([
+      'Every level is an object with these fields:',
+      fields,
+      'rows uses only "#" for a wall and "." for floor, every row the same length.',
+      'start is { "x", "y", "dir" } with dir one of N, E, S, W.',
+      'budget is the most lines a winning program may use, and it must be beatable inside it.',
+      'teaches and title are short strings that say what the level teaches.',
+      'A pack may hand over fewer words than the full set, and may carry a "rules" object such as { "fuel": 12 }.',
+      'If you withhold a word, every level must be solvable without it, and any trap that names it is refused.'
+    ].join('\n'));
+
+    blocks.push([
+      'The boards carry the word before the Word studio revisits it:',
+      '- One level spells the word. Its goal is { "kind": "hole", "sequence": [...] }, and its crates carry the letters as [x, y, "letter"].',
+      '- Another level asks for the meaning, not the word, and may add decoy letter crates and pillars.',
+      '- Every level that carries a word names it in a "word" field, and its goal sequence spells that word exactly.',
+      '- Every letter of the sequence must sit on a labelled crate. Decoy crates may carry letters the word does not use.',
+      '- Add a field named proof holding a program you have checked wins the level inside its budget.',
+      '- Add a field named traps: programs a learner might wrongly try, each of which must lose inside its budget.'
+    ].join('\n'));
+
+    blocks.push(['Here is one real word lesson to copy the shape of:', exampleJson(h, learning)].join('\n'));
+
+    return blocks.join('\n\n');
+  }
+
+  function text(h, pack, wanted) {
+    const learning = typeof wanted === 'string' ? wanted.trim() : '';
+    const target = pack || (learning ? wordPack(h) : shelfFirst(h));
     if (!target) return '';
+    if (learning) return wordText(h, target, learning);
     const blocks = [];
 
     blocks.push([
@@ -142,5 +240,8 @@
     return blocks.join('\n\n');
   }
 
-  host.LoopworksLevelPrompt = { LEVEL_MIN, LEVEL_MAX, words, grammar, limits, exampleJson, text };
+  host.LoopworksLevelPrompt = {
+    LEVEL_MIN, LEVEL_MAX, WORD_LEVEL_MIN, WORD_LEVEL_MAX,
+    words, grammar, limits, wordPack, exampleJson, text
+  };
 })();

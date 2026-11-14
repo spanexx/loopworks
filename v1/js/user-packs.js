@@ -106,6 +106,120 @@
     });
   }
 
+  // WHY: a pack can carry a word lesson, and the engine must never learn what a word is. So the app
+  //      checks the shape here, before the pack reaches the shelf: a model that leaves out a Form field
+  //      or a story blank would otherwise become a studio that silently skips a word or crashes on it.
+  //      A pack with no words block is a logic pack and walks past all of this untouched.
+  function text(value) {
+    return typeof value === 'string' && value.trim() !== '';
+  }
+
+  function blankErrors(where, line, errors) {
+    if (!line || typeof line !== 'object' || Array.isArray(line)) {
+      errors.push(`${where} is missing.`);
+      return;
+    }
+    if (typeof line.pl !== 'string' || line.pl.split('____').length !== 2) {
+      errors.push(`${where} needs exactly one ____ blank.`);
+    }
+    if (!text(line.answer)) errors.push(`${where} needs the answer for its blank.`);
+  }
+
+  function wordErrors(candidate, errors) {
+    const words = candidate && candidate.words;
+    if (!words || typeof words !== 'object' || Array.isArray(words)) return;
+    const keys = Object.keys(words);
+    if (keys.length === 0) return;
+    const where = `pack "${candidate.id}"`;
+
+    if (!text(candidate.language)) {
+      errors.push(`${where} carries words but no language. Say which language the words belong to.`);
+    }
+    if (!text(candidate.aim)) {
+      errors.push(`${where} carries words but no aim. Say in one phrase what the learner is here for.`);
+    }
+
+    keys.forEach((key) => {
+      const word = words[key];
+      const at = `${where}, word "${key}"`;
+      if (!word || typeof word !== 'object' || Array.isArray(word)) {
+        errors.push(`${at} is not a word record.`);
+        return;
+      }
+      if (!text(word.en)) errors.push(`${at} has no English meaning (en).`);
+      if (word.pl !== key) {
+        errors.push(`${at} has pl "${String(word.pl)}", but its key is "${key}". The key is the base form.`);
+      }
+      if (!Array.isArray(word.story) || word.story.length === 0) {
+        errors.push(`${at} has no story.`);
+      } else {
+        word.story.forEach((line, index) => blankErrors(`${at} story ${index + 1}`, line, errors));
+      }
+      if (!Array.isArray(word.forms)) {
+        errors.push(`${at} has no forms list. A word that does not change carries an empty list.`);
+      } else {
+        word.forms.forEach((form, index) => {
+          const formAt = `${at} form ${index + 1}`;
+          if (!form || typeof form !== 'object' || Array.isArray(form)) {
+            errors.push(`${formAt} is not a form record.`);
+            return;
+          }
+          ['label', 'to', 'en', 'why'].forEach((field) => {
+            if (!text(form[field])) errors.push(`${formAt} has no ${field}.`);
+          });
+          blankErrors(`${formAt} use`, form.use, errors);
+        });
+      }
+      if (!Array.isArray(word.match) || word.match.length < 2) {
+        errors.push(`${at} needs at least two matching pairs.`);
+      } else {
+        word.match.forEach((pair, index) => {
+          if (!pair || !text(pair.pl) || !text(pair.en)) {
+            errors.push(`${at} match ${index + 1} needs a word and its English meaning.`);
+          }
+        });
+      }
+      const dialog = word.dialog;
+      if (!dialog || typeof dialog !== 'object' || Array.isArray(dialog)) {
+        errors.push(`${at} has no dialog.`);
+        return;
+      }
+      if (!text(dialog.q)) errors.push(`${at} dialog has no question.`);
+      if (!Array.isArray(dialog.opts) || dialog.opts.length < 2) {
+        errors.push(`${at} dialog needs at least two options.`);
+      }
+      if (!Number.isInteger(dialog.right) || !Array.isArray(dialog.opts)
+        || dialog.right < 0 || dialog.right >= dialog.opts.length) {
+        errors.push(`${at} dialog points at an option that is not there.`);
+      }
+      if (!text(dialog.reply)) errors.push(`${at} dialog has no reply.`);
+    });
+
+    (Array.isArray(candidate.levels) ? candidate.levels : []).forEach((level) => {
+      if (!level || typeof level !== 'object' || level.word === undefined) return;
+      const at = `${where}, level "${level.id}"`;
+      if (typeof level.word !== 'string' || !level.word || !words[level.word]) {
+        errors.push(`${at} names the word "${String(level.word)}", but the pack does not carry it.`);
+        return;
+      }
+      if (!level.goal || level.goal.kind !== 'hole') {
+        errors.push(`${at} carries "${level.word}" but its goal is not a hole.`);
+        return;
+      }
+      const sequence = Array.isArray(level.goal.sequence) ? level.goal.sequence : [];
+      if (sequence.join('') !== level.word) {
+        errors.push(`${at} carries "${level.word}" but its goal sequence spells "${sequence.join('')}".`);
+      }
+      const labels = new Set((Array.isArray(level.crates) ? level.crates : [])
+        .filter((crate) => Array.isArray(crate) && crate.length >= 3)
+        .map((crate) => String(crate[2])));
+      const missing = sequence.filter((letter) => !labels.has(String(letter)));
+      if (missing.length) {
+        errors.push(`${at} cannot fill its hole: no crate carries ${missing.map((letter) => `"${letter}"`).join(', ')}.`);
+      }
+    });
+  }
+
   function idErrors(candidate, known, seen, errors) {
     if (known.packs.indexOf(candidate.id) !== -1) {
       errors.push(`a pack called "${candidate.id}" is already in the app. An added pack needs an id of its own.`);
@@ -170,6 +284,7 @@
       const before = errors.length;
       engine.validatePack(candidate).forEach((message) => errors.push(message));
       sizeErrors(candidate, errors);
+      wordErrors(candidate, errors);
       idErrors(candidate, known, seen, errors);
       if (wants.prove && errors.length === before) proveErrors(candidate, errors, notes);
     });
@@ -227,6 +342,7 @@
     modal: id('pack-add-modal'),
     close: id('pack-add-close'),
     text: id('pack-add-text'),
+    word: id('pack-word'),
     file: id('pack-add-file'),
     save: id('pack-add-save'),
     prompt: id('pack-prompt-copy'),
@@ -335,7 +451,10 @@
   //      the same text lands in the box and is selected for a long-press. Neither arm says the other's
   //      word, because "copied" over a box the player still has to copy from is a lie about what happened.
   function copyPrompt() {
-    const prompt = host.LoopworksLevelPrompt ? host.LoopworksLevelPrompt.text(host) : '';
+    // WHY: the word field is read when the button is pressed, not remembered. A learner can fill it,
+    //      copy a word lesson, empty it, and copy the logic pack in the same visit.
+    const learning = el.word ? el.word.value : '';
+    const prompt = host.LoopworksLevelPrompt ? host.LoopworksLevelPrompt.text(host, null, learning) : '';
     const nav = host.navigator;
     const intoBox = () => {
       el.text.value = prompt;

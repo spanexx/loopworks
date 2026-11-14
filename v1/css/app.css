@@ -1196,6 +1196,43 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 
 .studio-gloss { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
 
+/* WHY: a Form is shown as a pair before it is asked for. The changed form carries the amber the app
+   already uses for the thing being learned, and the reason sits in a quiet rule beside it, so the
+   learner reads why the language changes the word before the blank asks him to do it. */
+.studio-form-pair {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 10px 0 6px;
+}
+
+.studio-form-from { font-size: 24px; font-weight: 600; color: var(--ink); }
+
+.studio-form-arrow { font-size: 20px; color: var(--signal); }
+
+.studio-form-to { font-size: 24px; font-weight: 600; color: var(--amber-ink); }
+
+.studio-form-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+
+.studio-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--btn-edge);
+  border-radius: 2px;
+  color: var(--amber-ink);
+  font: 11px var(--mono);
+}
+
+.studio-form-why {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--signal);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .studio-prompt { margin: 6px 0 14px; font-size: 15px; color: var(--ink); }
 
 .studio-question { margin: 8px 0 0; font-size: 19px; color: var(--ink); }
@@ -1307,6 +1344,31 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 }
 
 .pack-add-intro { margin: 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
+
+/* WHY: the word field is the one thing that turns the prompt from a logic ask into a word lesson. It sits
+   above the pack box, quiet enough not to compete with "Add it", and its hint says what filling it does
+   and what leaving it empty does, so the two paths are one choice rather than a hidden mode. */
+.pack-add-word { display: flex; flex-direction: column; gap: 6px; }
+
+.pack-add-word-label {
+  font: 10px var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.pack-add-word-input {
+  padding: 9px 12px;
+  border: 1px solid var(--edge-strong);
+  border-radius: 2px;
+  background: var(--field);
+  color: var(--ink);
+  font: 13px var(--mono);
+}
+
+.pack-add-word-input::placeholder { color: var(--faint); }
+
+.pack-add-word-hint { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
 
 .pack-add-text {
   min-height: 132px;

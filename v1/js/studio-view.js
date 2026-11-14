@@ -1,14 +1,18 @@
 // WHY: the studio is where a word that was carried on a board is met again, one context at a time. This
 //      file owns the screen and no storage: it paints what the model hands it, calls back when a context
-//      is finished, and never decides what is remembered. The blank is the input in the story, the two
-//      matching columns do not line up, and there are no tabs - a learner walks the four contexts in
-//      order, with Back to review and a Next that waits until the current one is done. The fourth
-//      context is the end of the walk: one Done returns to Work instead of leaving Back as a dead end.
+//      is finished, and never decides what is remembered. The blank is the input in the story and in a
+//      Form's sentence, the two matching columns do not line up, and there are no tabs - a learner walks
+//      the contexts in order, with Back to review and a Next that waits until the current one is done.
+//      The last context is the end of the walk: one Done returns to Work instead of leaving Back as a
+//      dead end.
 // PACK: loopworks-app
 // 2026-11-13 agent: first build, following GRILL-loopworks-v2-subject entries 8, 10 and 11 and
 //      PRD-TRD-loopworks-v2-subject scenarios 4-8.
 // 2026-11-13 agent: four contexts met now ends in one Done, following the learner's same-day direction
 //      ("when i finish the 4th stage end it, now it just says back").
+// 2026-11-14 agent: Forms added between Spelling and Dialogue, following GRILL-loopworks-word-lessons
+//      entries 5 to 8. The walk and its length come from the Word's data, so a word with no Form walks
+//      four contexts and a word with one walks five.
 
 (function () {
   const host = typeof globalThis !== 'undefined' ? globalThis : window;
@@ -16,10 +20,11 @@
   const Studio = host.LoopworksStudio;
   const CONTEXTS = Studio && Studio.CONTEXTS
     ? Studio.CONTEXTS
-    : ['story', 'spelling', 'dialogue', 'matching'];
+    : ['story', 'spelling', 'forms', 'dialogue', 'matching'];
   const TITLES = {
     story: 'Story',
     spelling: 'Spelling',
+    forms: 'Forms',
     dialogue: 'Dialogue',
     matching: 'Matching'
   };
@@ -47,15 +52,26 @@
   // WHY: no screen in this file may name a subject. A word, a sentence, a pair, a question and its
   //      options all arrive from the pack, and the only words this file knows are its own four context
   //      names and the plain refusals a learner reads. That is what keeps a second language a data file.
+  // WHY: the walk is the Word's own. A Word that carries Forms walks five contexts; a Word that does
+  //      not walks the four it has always had. The view asks the model rather than deciding here, so
+  //      the screen and the offer after a solve cannot disagree about what is left.
+  function walkOf(entry) {
+    if (Studio && typeof Studio.contexts === 'function') return Studio.contexts(entry && entry.data);
+    return CONTEXTS;
+  }
+
   function render(mount, met, onDone, onExit) {
     if (!mount || !doc) return;
     const entries = Array.isArray(met) ? met.filter((entry) => entry && entry.data) : [];
+    const first = entries[0] || null;
     const state = {
       entries,
-      entry: entries[0] || null,
+      entry: first,
+      walk: walkOf(first),
       index: 0,
       done: {},
       storyStep: 0,
+      formStep: 0,
       left: null,
       matched: {},
       say: '',
@@ -71,15 +87,16 @@
     }
 
     function enter(index) {
-      state.index = Math.max(0, Math.min(CONTEXTS.length - 1, index));
+      state.index = Math.max(0, Math.min(state.walk.length - 1, index));
       state.storyStep = 0;
+      state.formStep = 0;
       state.left = null;
       state.matched = {};
       state.say = '';
     }
 
     function allDone() {
-      return CONTEXTS.every((context) => state.done[context] === true);
+      return state.walk.every((context) => state.done[context] === true);
     }
 
     function complete(context) {
@@ -120,6 +137,7 @@
             if (entry === state.entry) return;
             state.entry = entry;
             state.done = doneOf(entry);
+            state.walk = walkOf(entry);
             enter(nextIndex(state.done));
             paint();
           });
@@ -129,15 +147,15 @@
       }
 
       const line = node('p', 'studio-step',
-        `${TITLES[CONTEXTS[state.index]]} - ${state.index + 1} of ${CONTEXTS.length}`);
+        `${TITLES[state.walk[state.index]]} - ${state.index + 1} of ${state.walk.length}`);
       root.appendChild(line);
     }
 
     function nextIndex(done) {
-      for (let i = 0; i < CONTEXTS.length; i += 1) {
-        if (done[CONTEXTS[i]] !== true) return i;
+      for (let i = 0; i < state.walk.length; i += 1) {
+        if (done[state.walk[i]] !== true) return i;
       }
-      return CONTEXTS.length - 1;
+      return state.walk.length - 1;
     }
 
     // WHY: a finished context is reviewable, not hidden. Going back shows what was already done, while
@@ -216,6 +234,76 @@
         submit();
       });
       todo.appendChild(check);
+    }
+
+    // WHY: a Form is taught, then checked. The pair, the pack's name for the change, what the changed
+    //      form means and why the language changes it are all on screen before the learner types, and
+    //      the sentence is fresh - not one of the story's - so passing it proves the change transfers.
+    //      Every word here comes from the pack; this file names no language, word or case.
+    function paintForms(exercise) {
+      const forms = Array.isArray(state.entry.data.forms) ? state.entry.data.forms : [];
+      if (!forms.length) return;
+      if (state.done.forms || state.formStep >= forms.length) {
+        const last = forms[forms.length - 1];
+        exercise.appendChild(node('p', 'studio-done', `Form completed - ${last.to}.`));
+        return;
+      }
+      const form = forms[state.formStep];
+
+      const pair = node('div', 'studio-form-pair');
+      pair.appendChild(node('span', 'studio-form-from', state.entry.data.pl));
+      pair.appendChild(node('span', 'studio-form-arrow', '\u2192'));
+      pair.appendChild(node('span', 'studio-form-to', form.to));
+      exercise.appendChild(pair);
+
+      const chips = node('div', 'studio-form-chips');
+      chips.appendChild(node('span', 'studio-chip', form.label));
+      chips.appendChild(node('span', 'studio-chip', form.en));
+      if (forms.length > 1) {
+        chips.appendChild(node('span', 'studio-chip', `${state.formStep + 1} of ${forms.length}`));
+      }
+      exercise.appendChild(chips);
+
+      exercise.appendChild(node('p', 'studio-form-why', form.why));
+
+      const use = form.use || {};
+      const parts = String(use.pl || '').split('____');
+      const sentence = node('p', 'studio-sentence');
+      sentence.appendChild(node('span', 'studio-text', parts[0]));
+      const field = node('input', 'studio-blank');
+      field.type = 'text';
+      field.value = '';
+      field.setAttribute('autocomplete', 'off');
+      field.setAttribute('autocapitalize', 'off');
+      field.setAttribute('spellcheck', 'false');
+      field.setAttribute('size', String(Math.max(3, String(use.answer).length)));
+      field.setAttribute('aria-label', 'the changed word');
+      sentence.appendChild(field);
+      sentence.appendChild(node('span', 'studio-text', parts.length > 1 ? parts.slice(1).join('____') : ''));
+      exercise.appendChild(sentence);
+      if (use.en) exercise.appendChild(node('p', 'studio-gloss', use.en));
+
+      function check(value) {
+        if (lower(value) === lower(use.answer)) {
+          state.formStep += 1;
+          state.say = '';
+          if (state.formStep >= forms.length) complete('forms');
+          else paint();
+          return;
+        }
+        wrong(NOT_YET, field);
+      }
+
+      field.addEventListener('input', (event) => {
+        const value = event && event.target ? event.target.value : field.value;
+        if (field.className !== 'studio-blank') field.className = 'studio-blank';
+        if (String(value).trim().length === String(use.answer).length) check(value);
+      });
+      field.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        if (event.preventDefault) event.preventDefault();
+        check(field.value);
+      });
     }
 
     function paintDialogue(exercise, todo) {
@@ -336,9 +424,9 @@
       const next = press('Next');
       // WHY: Next waits for the current context to be done, and it is refused on the last one because
       //      there is nowhere left to walk. Back is the only way to review from there.
-      next.disabled = state.index >= CONTEXTS.length - 1 || state.done[CONTEXTS[state.index]] !== true;
+      next.disabled = state.index >= state.walk.length - 1 || state.done[state.walk[state.index]] !== true;
       next.addEventListener('click', () => {
-        if (next.disabled || state.index >= CONTEXTS.length - 1) return;
+        if (next.disabled || state.index >= state.walk.length - 1) return;
         enter(state.index + 1);
         paint();
       });
@@ -360,16 +448,17 @@
       paintHead(panel);
       const exercise = node('div', 'studio-exercise');
       const todo = node('div', 'studio-todo');
-      const context = CONTEXTS[state.index];
+      const context = state.walk[state.index];
       if (context === 'story') paintStory(exercise, todo);
       else if (context === 'spelling') paintSpelling(exercise, todo);
+      else if (context === 'forms') paintForms(exercise);
       else if (context === 'dialogue') paintDialogue(exercise, todo);
       else paintMatching(exercise);
       panel.appendChild(exercise);
       panel.appendChild(todo);
 
       const say = node('p', 'studio-say',
-        allDone() ? 'All four contexts are met.' : state.say);
+        allDone() ? `All ${state.walk.length} contexts are met.` : state.say);
       say.setAttribute('aria-live', 'polite');
       state.sayNode = say;
       panel.appendChild(say);
