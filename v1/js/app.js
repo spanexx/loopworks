@@ -105,7 +105,7 @@
   let pack = null;
   let level = null;
   let baseline = null;
-  let machine = null;
+  let machine = null;\n  let failedLine = 0;
   let timer = null;
   let running = false;
   let logOpen = false;
@@ -439,6 +439,7 @@
       progress = LoopworksEvidence.writeEntry(level.id, entry);
       const over = status.linesUsed > level.budget ? ', over budget' : '';
       setVerdict('solved', 'Solved', `${status.linesUsed} of ${level.budget} lines${over}`, CHECK);
+      failedLine = 0;
       // WHY: a solve is the moment the word is revisited, but the studio is offered only when it still
       //      has a context to do. That keeps a finished studio from interrupting practice, and it also
       //      reaches a save that solved the board before auto-open existed.
@@ -449,7 +450,7 @@
       const last = machine.events[machine.events.length - 1];
       let detail = status.reason;
       if (status.reason === 'program ended') detail = 'program ended - the goal is not met';
-      else if (last) detail = `${status.reason} at line ${last.line}`;
+      else if (last) { detail = `${status.reason} at line ${last.line}`; failedLine = last.line; }
       setVerdict('stuck', 'Stuck', detail, WARN);
     }
     if (logOpen) renderTrace();
@@ -488,6 +489,7 @@
     if (running) { pause(); return; }
     closeKeyboard();
     cancelStudioOffer();
+    failedLine = 0;
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -510,6 +512,7 @@
   function stepOnce() {
     pause();
     cancelStudioOffer();
+    failedLine = 0;
     if (!machine || machine.status.done) {
       machine = Loopworks.machine(pack, level.id, el.code.value);
       LoopworksBoard.render(el.board, baseline, level);
@@ -530,6 +533,7 @@
     pause();
     cancelStudioOffer();
     machine = null;
+    failedLine = 0;
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
     resetLog();
@@ -545,11 +549,28 @@
     el.lineCount.textContent = count === 1 ? '1 line' : `${count} lines`;
   }
 
+  // WHY: the gutter is the only place a run can leave a mark on the source. When a run stops on a line,
+  //      that line is painted in the danger colour and every line after it is dimmed, so the learner sees
+  //      where the code stopped and which lines never ran. A clean gutter means the last run either
+  //      solved, never started, or was edited away.
   function syncGutter() {
     const count = el.code.value.split('\n').length;
-    const numbers = [];
-    for (let n = 1; n <= count; n += 1) numbers.push(n);
-    el.gutter.textContent = numbers.join('\n');
+    const fl = (failedLine >= 1 && failedLine <= count) ? failedLine : 0;
+    if (!fl) {
+      const numbers = [];
+      for (let n = 1; n <= count; n += 1) numbers.push(n);
+      el.gutter.textContent = numbers.join('\n');
+      el.gutter.scrollTop = el.code.scrollTop;
+      return;
+    }
+    const html = [];
+    for (let n = 1; n <= count; n += 1) {
+      let cls = 'gutter-num';
+      if (n === fl) cls += ' gutter-fail';
+      else if (n > fl) cls += ' gutter-skip';
+      html.push('<span class="' + cls + '">' + n + '</span>');
+    }
+    el.gutter.innerHTML = html.join('');
     el.gutter.scrollTop = el.code.scrollTop;
   }
 
@@ -559,6 +580,7 @@
     pause();
     cancelStudioOffer();
     machine = null;
+    failedLine = 0;
     LoopworksBoard.render(el.board, baseline, level);
     renderGoal(level, baseline);
     resetLog();
