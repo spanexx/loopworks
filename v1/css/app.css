@@ -763,35 +763,12 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 .gutter-current { display: block; color: var(--signal); font-weight: 700; }
 .gutter-pass { display: block; color: #7ec8a0; }
 .gutter-fail { display: block; color: var(--danger); font-weight: 700; }
+.gutter-reason { font-size: 9px; color: var(--danger); margin-left: 2px; }
 .gutter-skip { display: block; color: var(--faint); opacity: 0.35; }
+.gutter-control { display: block; color: var(--amber-ink); }
+.gutter-guard { font-size: 9px; color: var(--amber-ink); margin-left: 2px; }
+.gutter-control-mark { font-size: 9px; color: var(--amber-ink); margin-left: 2px; }
 .gutter-count { font-size: 9px; opacity: 0.7; margin-left: 2px; }
-
-/* WHY: a thin bar over the editor paints the failing line's background, so the failure is visible in
-   the source itself, not only in the gutter. It is pointer-events:none and mirrors the textarea's
-   scroll, so it never interferes with typing. */
-.editor-overlay {
-  position: absolute;
-  top: 0;
-  left: 24px;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-  overflow: hidden;
-  padding: 8px 10px;
-  font: 12px/20px var(--mono);
-  color: transparent;
-  z-index: 1;
-}
-.editor-overlay > div {
-  height: 20px;
-  line-height: 20px;
-}
-.overlay-fail {
-  background: rgba(255, 138, 122, 0.18);
-  border-left: 2px solid var(--danger);
-  margin-left: -10px;
-  padding-left: 8px;
-}
 
 /* WHY: a run that stops on a line leaves a mark on the gutter. The line it stopped on is painted in
    the danger colour, and every line after it is dimmed, so the learner sees where the code stopped and

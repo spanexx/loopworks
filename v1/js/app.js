@@ -64,7 +64,6 @@
     program: id('program'),
     editor: id('editor'),
     gutter: id('gutter'),
-    overlay: id('editor-overlay'),
     code: id('code'),
     suggest: id('suggest'),
     lineCount: id('line-count'),
@@ -111,6 +110,9 @@
   let currentLine = 0;
   let executionCounts = {};
   let runSolved = false;
+  let failureReason = '';
+  let guardResults = {};
+  let controlLines = {};
   let timer = null;
   let running = false;
   let logOpen = false;
@@ -145,6 +147,13 @@
     pack = nextPack;
     level = nextLevel;
     machine = null;
+    failedLine = 0;
+    currentLine = 0;
+    executionCounts = {};
+    runSolved = false;
+    failureReason = '';
+    guardResults = {};
+    controlLines = {};
     baseline = Loopworks.machine(pack, level.id, '').world();
     logOpen = false;
     el.logList.hidden = true;
@@ -153,6 +162,7 @@
     sug.dismissed = false;
     hideSuggest();
     el.code.value = '';
+    syncGutter();
     el.wherePack.textContent = pack.name;
     el.whereLevel.textContent = level.title;
     // WHY: a hole level's aim is a sequence, so the goal bar carries a slot for each label. The
@@ -570,20 +580,37 @@
   // WHY: the gutter is the only place a run can leave a mark on the source. While a run is live, the
   //      line being executed is marked so the learner sees where the machine is. When a run stops on a
   //      line, that line is painted in the danger colour and every line after it is dimmed, so the
-  //      learner sees where the code stopped and which lines never ran. On a solved run every line that
-  //      ran is marked green. A line that ran more than once carries its count. A clean gutter means
-  //      the last run either never started or was edited away.
+  //      learner sees where the code stopped and which lines never ran; the reason (bump, out of fuel,
+  //      too many steps, program ended) sits in a small badge on that line. On a solved run every line
+  //      that ran is marked green with a checkmark. Control-flow lines (repeat, end) are marked with a
+  //      loop icon. Guard lines show whether their condition was true or false. A line that ran more
+  //      than once carries its count. A line that never ran is dimmed. A clean gutter means the last
+  //      run either never started or was edited away.
+  // WHY: a short symbol is faster to read than a word in a gutter that is only a few pixels wide.
+  //      The full reason stays in the tooltip and in the verdict, so nothing is lost.
+  function reasonIcon(reason) {
+    if (reason === 'bump') return '\u2715';
+    if (reason === 'out of fuel') return '\u26A1';
+    if (reason === 'too many steps') return '\u221E';
+    if (reason === 'program ended') return '\u25A0';
+    return '\u2715';
+  }
+
   function syncGutter() {
+    // detect control-flow lines from the source so they are always marked
+    controlLines = {};
+    el.code.value.split('\n').forEach((text, i) => {
+      const t = text.trim();
+      if (/^repeat\s+\d+$/.test(t) || t === 'end') controlLines[i + 1] = t === 'end' ? 'end' : 'repeat';
+    });
     const count = el.code.value.split('\n').length;
     const fl = (failedLine >= 1 && failedLine <= count) ? failedLine : 0;
     const cl = (!fl && currentLine >= 1 && currentLine <= count) ? currentLine : 0;
     const solved = (!fl && !cl && runSolved);
-    if (!fl && !cl && !solved) {
+    const hasRun = (Object.keys(executionCounts).length > 0);
+    if (!fl && !cl && !solved && !hasRun) {
       const numbers = [];
-      for (let n = 1; n <= count; n += 1) {
-        const c = executionCounts[n] || 0;
-        numbers.push(c > 1 ? n + '\u00d7' + c : String(n));
-      }
+      for (let n = 1; n <= count; n += 1) numbers.push(String(n));
       el.gutter.textContent = numbers.join('\n');
       el.gutter.scrollTop = el.code.scrollTop;
       return;
@@ -592,39 +619,42 @@
     for (let n = 1; n <= count; n += 1) {
       let cls = 'gutter-num';
       const cnt = executionCounts[n] || 0;
+      let mark = '';
+      const isControl = !!controlLines[n];
       if (fl) {
-        if (n === fl) cls += ' gutter-fail';
+        if (n === fl) { cls += ' gutter-fail'; mark = '<span class="gutter-reason" title="' + (failureReason || 'stopped') + '">' + reasonIcon(failureReason) + '</span>'; }
         else if (n < fl && cnt > 0) cls += ' gutter-pass';
         else if (n > fl) cls += ' gutter-skip';
+        else if (isControl) cls += ' gutter-control';
       } else if (cl) {
         if (n === cl) cls += ' gutter-current';
         else if (cnt > 0) cls += ' gutter-pass';
+        else if (isControl) cls += ' gutter-control';
+        else if (hasRun) cls += ' gutter-skip';
       } else if (solved) {
+        if (cnt > 0) { cls += ' gutter-pass'; mark = '<span class="gutter-check">\u2713</span>'; }
+        else if (isControl) cls += ' gutter-control';
+        else cls += ' gutter-skip';
+      } else if (hasRun) {
         if (cnt > 0) cls += ' gutter-pass';
+        else if (isControl) cls += ' gutter-control';
+        else cls += ' gutter-skip';
+      }
+      const gr = guardResults[n];
+      if (gr && (gr.yes + gr.no) > 0) {
+        const total = gr.yes + gr.no;
+        const ratio = total > 1 ? gr.yes + '/' + total : (gr.yes > 0 ? '\u2713' : '\u2717');
+        mark = '<span class="gutter-guard" title="true: ' + gr.yes + ', false: ' + gr.no + '">' + ratio + '</span>' + mark;
+      }
+      if (isControl) {
+        const icon = controlLines[n] === 'repeat' ? '\u21bb' : '\u230b';
+        mark = '<span class="gutter-control-mark">' + icon + '</span>' + mark;
       }
       const countTag = cnt > 1 ? '<span class="gutter-count">' + cnt + '</span>' : '';
-      html.push('<span class="' + cls + '">' + n + countTag + '</span>');
+      html.push('<span class="' + cls + '" title="' + (n === fl ? (failureReason || '') : (solved && cnt > 0 ? 'passed' : (hasRun && cnt === 0 ? 'skipped' : ''))) + '">' + n + countTag + mark + '</span>');
     }
     el.gutter.innerHTML = html.join('');
     el.gutter.scrollTop = el.code.scrollTop;
-    syncOverlay();
-  }
-
-  // WHY: a thin bar over the editor paints the failing line's background, so the failure is visible in
-  //      the source itself, not only in the gutter. It is pointer-events:none and mirrors the textarea's
-  //      scroll, so it never interferes with typing.
-  function syncOverlay() {
-    if (!el.overlay) return;
-    const count = el.code.value.split('\n').length;
-    const fl = (failedLine >= 1 && failedLine <= count) ? failedLine : 0;
-    const lines = [];
-    for (let n = 1; n <= count; n += 1) {
-      if (fl && n === fl) lines.push('<div class="overlay-fail"></div>');
-      else lines.push('<div></div>');
-    }
-    el.overlay.innerHTML = lines.join('');
-    el.overlay.scrollTop = el.code.scrollTop;
-    el.overlay.scrollLeft = el.code.scrollLeft;
   }
 
   // WHY: editing the source makes the last run a lie, so the board returns to its untouched state
@@ -1179,10 +1209,6 @@
   });
   el.code.addEventListener('scroll', () => {
     el.gutter.scrollTop = el.code.scrollTop;
-    if (el.overlay) {
-      el.overlay.scrollTop = el.code.scrollTop;
-      el.overlay.scrollLeft = el.code.scrollLeft;
-    }
     if (snapGuard) { snapGuard = false; return; }
     if (sug.items.length) hideSuggest();
   });
@@ -1312,4 +1338,6 @@
     showView(next ? 'work' : 'evidence');
     if (next && host.matchMedia && host.matchMedia('(min-width: 901px)').matches) el.code.focus();
   }
+  host.__startRun = startRun;
+  host.__programChanged = programChanged;
 })();
