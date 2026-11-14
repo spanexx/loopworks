@@ -125,6 +125,7 @@
       'Write a pack of levels and a word lesson for Loopworks, a game that teaches programming logic and the words of a language.',
       'The player types short instruction lines and a drone runs them on a grid.',
       `The learner is learning: ${learning}.`,
+      'If the learner has not said how they want the pack delivered, ask whether they prefer raw JSON text to paste into the box, or a .json file to upload.',
       `Return one JSON pack holding ${WORD_LEVEL_MIN} to ${WORD_LEVEL_MAX} levels, and nothing else - no prose around it.`
     ].join('\n'));
 
