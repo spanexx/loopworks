@@ -762,6 +762,7 @@ body.is-dragging { cursor: row-resize; user-select: none; }
 .gutter-num { display: block; }
 .gutter-fail { display: block; color: var(--danger); font-weight: 700; }
 .gutter-skip { display: block; color: var(--faint); opacity: 0.35; }
+.gutter-current { display: block; color: var(--signal); font-weight: 700; }
 
 #code {
   width: 100%;
