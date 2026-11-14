@@ -322,7 +322,7 @@ check('app: the page loads the theme first, then the rules, every pack on disk, 
   const scripts = [...page.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
   const isPack = (src) => /^js\/packs\/[a-z0-9-]+\.js$/.test(src);
   const own = scripts.filter((src) => !isPack(src));
-  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/studio.js', 'js/studio-view.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/app.js', 'js/pwa.js'];
+  const expected = ['js/theme.js', 'js/engine.js', 'js/prover.js', 'js/board.js', 'js/evidence.js', 'js/words.js', 'js/studio.js', 'js/studio-view.js', 'js/sound.js', 'js/level-prompt.js', 'js/user-packs.js', 'js/run-marker.js', 'js/app.js', 'js/pwa.js'];
   assert(JSON.stringify(own) === JSON.stringify(expected), `the app's own scripts are ${own.join(', ')}`);
 
   const untagged = shippedScripts.filter((from) => !scripts.includes(from));
@@ -1250,16 +1250,25 @@ check('app: the board is refitted to the room typing leaves, and a run hands the
 });
 check('app: a run that stops marks the failing line and dims the rest', () => {
   const app = read(path.join(v1, 'js', 'app.js'));
+  const marker = read(path.join(v1, 'js', 'run-marker.js'));
   const css = read(path.join(v1, 'css', 'app.css'));
-  assert(/let failedLine = 0;/.test(app), 'the controller keeps no mark for a failed line');
-  assert(/failedLine = last\.line;/.test(app), 'finish() does not record the line a run stopped on');
-  assert(/failedLine = 0;/.test(app), 'a solved, edited or reset run does not clear the mark');
-  const sync = app.slice(app.indexOf('function syncGutter()'));
-  assert(/gutter-fail/.test(sync), 'syncGutter does not paint the failing line');
-  assert(/gutter-skip/.test(sync), 'syncGutter does not dim the lines that never ran');
+  assert(/let failedLine = 0;/.test(marker), 'the run marker keeps no mark for a failed line');
+  assert(/setFailed\(line, reason\)/.test(marker), 'the run marker has no way to record a failed line');
+  assert(/function sync\(\)/.test(marker), 'the run marker has no sync function');
+  assert(/gutter-fail/.test(marker), 'the run marker does not paint the failing line');
+  assert(/gutter-skip/.test(marker), 'the run marker does not dim the lines that never ran');
+  assert(/gutter-check/.test(marker), 'the run marker does not show success checkmarks');
+  assert(/gutter-reason/.test(marker), 'the run marker does not show the failure reason');
   assert(/\.gutter-fail\s*{[^}]*color:\s*var\(--danger\)/.test(css), 'the failing line is not painted in the danger colour');
   assert(/\.gutter-skip\s*{[^}]*opacity:\s*0\.35/.test(css), 'the skipped lines are not dimmed');
-  return 'failing line in danger, tail dimmed, cleared on edit, solve, reset and restart';
+  assert(/function syncBar\(/.test(marker), 'the run marker cannot paint the failing line in the editor');
+  assert(/function reposition\(\)/.test(marker), 'the run marker cannot follow the editor scroll');
+  assert(/runMarker\.reposition\(\)/.test(app), 'the editor scroll does not move the failing-line bar');
+  const page = read(path.join(v1, 'index.html'));
+  assert(/id="run-bar"/.test(page), 'the page carries no bar for the failing line');
+  assert(/\.run-bar\s*{[^}]*position:\s*absolute/.test(css), 'the failing-line bar is not placed over the editor');
+  assert(/\.run-bar\s*{[^}]*pointer-events:\s*none/.test(css), 'the failing-line bar can steal a press');
+  return 'failing line in danger with reason, tail dimmed, checkmarks on solve, one red bar in the editor';
 });
 
 
